@@ -107,19 +107,21 @@ class KnowledgeBase:
 
         nodes = []
         for doc in docs:
-            cleaned_text = re.sub(r"(?s)^\s*/\*+.*?\*/\s*", "", doc.text, count=1)
-            doc.set_content(cleaned_text)
             if doc.metadata.get("file_name", "").endswith(".py"):
                 parser = CodeHierarchyNodeParser(
                     language="python",
                     code_splitter=CodeSplitter(language="python", chunk_lines=1000, max_chars=2000)
                 )
             elif doc.metadata.get("file_name", "").endswith(".cpp"):
+                cleaned_text = re.sub(r"(?s)^\s*/\*+.*?\*/\s*", "", doc.text, count=1)
+                doc.set_content(cleaned_text)
                 parser = CodeHierarchyNodeParser(
                     language="cpp",
                     code_splitter=CodeSplitter(language="cpp", chunk_lines=30, max_chars=2000)
                 )
             elif doc.metadata.get("file_name", "").endswith(".c"):
+                cleaned_text = re.sub(r"(?s)^\s*/\*+.*?\*/\s*", "", doc.text, count=1)
+                doc.set_content(cleaned_text)
                 parser = CodeHierarchyNodeParser(
                     language="c",
                     code_splitter=CodeSplitter(language="c", chunk_lines=30, max_chars=2000)
