@@ -2,6 +2,7 @@ import os
 import hashlib
 import pickle
 import time
+import re
 from pathlib import Path
 
 from llama_index.core import (
@@ -106,6 +107,8 @@ class KnowledgeBase:
 
         nodes = []
         for doc in docs:
+            cleaned_text = re.sub(r"(?s)^\s*/\*+.*?\*/\s*", "", doc.text, count=1)
+            doc.set_content(cleaned_text)
             if doc.metadata.get("file_name", "").endswith(".py"):
                 parser = CodeHierarchyNodeParser(
                     language="python",
