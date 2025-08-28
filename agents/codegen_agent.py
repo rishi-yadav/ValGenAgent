@@ -527,7 +527,6 @@ class MultiAgentTestOrchestrator:
             else:
                 self.logger.log("Orchestrator", f"WARNING: Knowledge base not available, proceeding without context")
 
-            import pdb;pdb.set_trace()
             if self.args.add_context_dir is not None:
                 prompt_with_context=f"based on following file{self.read_files_to_string(self.args.add_context_dir)}\n\n{initial_message}"
             elif context:
