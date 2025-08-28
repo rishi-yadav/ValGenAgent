@@ -2,7 +2,7 @@
   "test_plan": "cutlass_flash_attention_prefill_cachedkv",
   "tests": {
     "test_category": "cutlass_flash_attention_prefill_cachedkv",
-    "implementation_file": "xe_flash_prefill_cachedkv_{dtype}_{compute}_{output}_{head_size}.cpp",
+    "implementation_file": "xe_flash_prefill_cachedkv.cpp",
     "test_cases": [
       {
         "test_id": "REQ_001",
