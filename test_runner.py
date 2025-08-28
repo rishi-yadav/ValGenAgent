@@ -469,16 +469,17 @@ def main() -> None:
     parser.add_argument('--execute_tests', type=lambda x: x.lower() in ('true', '1', 'yes'), default=True,
                         help='Execute generated tests (default: True). Set it to false to only generate tests without execution.')
 
-    parser.add_argument('--prompt_for', type=str, required=True,
-                        help='which system prompt to use for the test generation workflow. Choose from: [collective, cutlass]')
+    parser.add_argument('--prompt_path', type=str, required=True,
+                        help='path to the system prompts directory to use for the test generation workflow.')
     args = parser.parse_args()
 
     try:
         # Dynamically import the module based on the prompt
-        code_agent_prompt = importlib.import_module(f'prompts.{args.prompt_for}.code_agent_system_prompt')
-        review_agent_prompt = importlib.import_module(f'prompts.{args.prompt_for}.review_agent_system_prompt')
-        test_coordinator_prompt = importlib.import_module(f'prompts.{args.prompt_for}.test_coordinator_system_prompt')
-        print(f"[Info]: Running test workflow with prompt: {args.prompt_for}")
+        module_path = args.prompt_path.replace("/", ".")
+        code_agent_prompt = importlib.import_module(f'{module_path}.code_agent_system_prompt')
+        review_agent_prompt = importlib.import_module(f'{module_path}.review_agent_system_prompt')
+        test_coordinator_prompt = importlib.import_module(f'{module_path}.test_coordinator_system_prompt')
+        print(f"[Info]: Running test workflow with prompt: {module_path}")
     except AssertionError as e:
         assert f"Error in dynamic prompt import : {e}"
 
