@@ -527,7 +527,10 @@ class MultiAgentTestOrchestrator:
             else:
                 self.logger.log("Orchestrator", f"WARNING: Knowledge base not available, proceeding without context")
 
-            if context:
+            import pdb;pdb.set_trace()
+            if self.args.add_context_dir is not None:
+                prompt_with_context=f"based on following file{self.read_files_to_string(self.args.add_context_dir)}\n\n{initial_message}"
+            elif context:
                 prompt_with_context = f"Based on the following code context:\n\n{context}\n\n {initial_message}"
             else:
                 prompt_with_context = initial_message
@@ -583,6 +586,21 @@ class MultiAgentTestOrchestrator:
         except Exception as e:
             self.logger.log("Orchestrator", f"ERROR: GroupChat failed for {impl_file}: {str(e)}")
             return False
+
+
+    def read_files_to_string(self,directory_path):
+        combined_content = ""
+
+        # Loop through all files in the directory
+        for filename in os.listdir(directory_path):
+            file_path = os.path.join(directory_path, filename)
+
+            # Ensure it's a file, not a subdirectory
+            if os.path.isfile(file_path):
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                    combined_content += f.read() + "\n"  
+
+        return combined_content
 
     def _format_test_cases_for_chat(self, test_cases: List[Dict]) -> str:
         """Format test cases for group chat message"""
