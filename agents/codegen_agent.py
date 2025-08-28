@@ -515,7 +515,17 @@ class MultiAgentTestOrchestrator:
             test_categories_string = ' '.join({tc['test_category'] for tc in relevant_tests})
             context_input=f"Test is {test_categories_string}"
             context = ""
-            if self.kb:
+            if self.args.add_context_dir is not None:
+                combined_content = ""
+                for filename in os.listdir(self.args.add_context_dir):
+                    file_path = os.path.join(self.args.add_context_dir, filename)
+                    if os.path.isfile(file_path):
+                        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                            combined_content += f.read() + "\n"
+            
+                prompt_with_context=f"based on following file{combined_content}\n\n{initial_message}"
+        
+            elif self.kb:
                 try:
                     context = self.kb.retrive_document_chunks(context_input)
                     if "[Error]" in context or not context:
@@ -527,17 +537,7 @@ class MultiAgentTestOrchestrator:
             else:
                 self.logger.log("Orchestrator", f"WARNING: Knowledge base not available, proceeding without context")
 
-            if self.args.add_context_dir is not None:
-                combined_content = ""
-                for filename in os.listdir(self.args.add_context_dir):
-                    file_path = os.path.join(self.args.add_context_dir, filename)
-                    if os.path.isfile(file_path):
-                        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                            combined_content += f.read() + "\n"
-            
-                prompt_with_context=f"based on following file{combined_content}\n\n{initial_message}"
-
-            elif context:
+            if context:
                 prompt_with_context = f"Based on the following code context:\n\n{context}\n\n {initial_message}"
             else:
                 prompt_with_context = initial_message
