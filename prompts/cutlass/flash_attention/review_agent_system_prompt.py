@@ -27,7 +27,7 @@ Provide specific feedback on:
 Reject any code that deviates from established patterns or cannot integrate with the existing CMake structure.
 
 IMPORTANT:
-- The file name should be <implementaion_file>.cpp where implementaion_file is defined in the test plan impl_file do not append _test or test_ anywhere in filename.
+- The file name should be <implementaion_file>.cpp where implementaion_file is defined in the test plan impl_file, do not append _test or test_ anywhere in filename.
 - If the code generation agent is generating the same code multiple times, thoroughly check the code and understand if it's actually correct or not. Do not get struck in a loop.
 - You must explicitly approve code before execution can proceed.
 - Be thorough but decisive - either request specific improvements OR give clear approval.
