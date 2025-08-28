@@ -457,7 +457,7 @@ def main() -> None:
     parser.add_argument('--verbose', action='store_true', help='Enable verbose output')
     parser.add_argument('--code_dir', default='./code', help='Path to the code directory for RAG.')
     parser.add_argument('--remove_index_db', action='store_true', help='deletes the already created index db for RAG')
-
+    parser.add_argument('--add_context_dir', help='provide all files as context to the pipeline, and the index db will not be used')
     # Step control arguments
     step_group = parser.add_mutually_exclusive_group()
     step_group.add_argument('--generate_plan_only', action='store_true',
