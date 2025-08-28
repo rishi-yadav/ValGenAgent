@@ -1,0 +1,13 @@
+{
+  "test_plan": "cutlass_flash_attention_decode",
+  "tests": {
+    "test_category": "cutlass_flash_attention_decode",
+    "implementation_file": "xe_flash_decode_decode_generated.cpp",
+    "test_cases": [
+      {
+        "test_id": "REQ_001",
+        "description": "Write 15 new test cases for flash attention decode using configs present in popular LLMs like: llama3 8B , llama3 70B , Llama4 Scout, Flux, Whisper V3, llama3 405B, Qwen 235B, Deepseek-R1, etc. Override existing TestFlashDecodeAll function if required for better quality tests."
+      }
+    ]
+  }
+}

@@ -470,7 +470,7 @@ def main() -> None:
                         help='Execute generated tests (default: True). Set it to false to only generate tests without execution.')
 
     parser.add_argument('--prompt_path', type=str, required=True,
-                        help='path to the system prompt directory to use for the test generation workflow.')
+                        help='path to the system prompts directory to use for the test generation workflow.')
     args = parser.parse_args()
 
     try:
