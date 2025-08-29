@@ -270,8 +270,8 @@ def save_file(filepath: str, code: str) -> str:
     except Exception as e:
         return f" Failed to write file {filepath}: {e}"
 
-def run_build(build_dir: str, log_dir: str, summarizer_agent,build_cmd,logger) -> tuple[bool, list[str]]:
-    """Run Ninja build, save log, return (success, messages)."""
+def execute_build_command(build_dir: str, log_dir: str, summarizer_agent, build_cmd: str, logger) -> tuple[bool, list[str]]:
+    """ Run the build command, save log, returns (success, messages)."""
     msgs = []
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_file = os.path.join(log_dir, f"build_log_{timestamp}.txt")
@@ -325,7 +325,7 @@ def summarize_log(agent, log: str, context: str) -> str:
         return f" Failed to summarize {context}: {e}"
 
 
-def build_code_to_file(code: str, filename: str, directory: str,build: bool,  build_cmd: str, build_dir: str,logger) -> str:
+def save_and_build(code: str, filename: str, directory: str,build: bool,  build_cmd: str, build_dir: str,logger) -> str:
     """
     save the test file, and build the file with given build command at the given build dir.
     """
@@ -356,7 +356,7 @@ def build_code_to_file(code: str, filename: str, directory: str,build: bool,  bu
     )
 
     # Step 3: Run build
-    success, build_msgs = run_build(build_dir, directory, summarizer_agent,build_cmd,logger)
+    success, build_msgs = execute_build_command(build_dir, directory, summarizer_agent,build_cmd,logger)
     msgs.extend(build_msgs)
     if success:
         logger.log("TestBuildAndExecuteProxy","build succeed")
@@ -450,7 +450,7 @@ class MultiAgentTestOrchestrator:
                  review_agent_prompt: str = "",
                  test_coordinator_prompt: str = ""):
         self.args=args
-        self.build=args.build or False
+        self.build=args.build
         self.build_dir=args.build_dir or ""
         self.build_cmd=args.build_cmd or ""
         self.output_dir = output_dir
@@ -494,7 +494,7 @@ class MultiAgentTestOrchestrator:
             )
         elif self.build:
             def wrapped_build_code(code: str, filename: str) -> str:
-                return build_code_to_file(
+                return save_and_build(
                     code=code,
                     filename=filename,
                     directory=self.output_dir,
