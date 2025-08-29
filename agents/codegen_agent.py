@@ -337,7 +337,7 @@ def find_executables(exe_dir: str) -> list[str]:
 
 
 
-def run_executables(executables: list[str], log_dir: str, logger) -> list[str]:
+def run_executables(executables: list[str], log_dir: str, execute_args: list, logger) -> list[str]:
     """Run executables, store all logs in a single file, return status messages."""
     msgs = []
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -353,7 +353,7 @@ def run_executables(executables: list[str], log_dir: str, logger) -> list[str]:
             logger.log("TestBuildAndExecuteProxy",f"Running {exe_name}...")
 
             run_proc = subprocess.run(
-                [exe],
+                [exe] + execute_args,
                 cwd=os.path.dirname(exe),
                 text=True,
                 stdout=subprocess.PIPE,
@@ -376,7 +376,7 @@ def run_executables(executables: list[str], log_dir: str, logger) -> list[str]:
     msgs.append(f"Combined log saved at {combined_log_file}")
     return msgs
 
-def save_and_build(code: str, filename: str, directory: str,build: bool,  build_cmd: str, build_dir: str,execute: bool, execute_dir: str, execute_args: str, logger) -> str:
+def save_and_build(code: str, filename: str, directory: str,build: bool,  build_cmd: str, build_dir: str,execute: bool, execute_dir: str, execute_args: list, logger) -> str:
     """
     save the test file, and build the file with given build command at the given build dir.
     """
@@ -418,7 +418,7 @@ def save_and_build(code: str, filename: str, directory: str,build: bool,  build_
                 msgs.append(f" No executables found in {execute_dir}")
             else:
                 msgs.append(f" Found executables: {executables}")
-                exe_msgs = run_executables(executables, execute_dir,logger)
+                exe_msgs = run_executables(executables, execute_dir,execute_args, logger)
                 msgs.extend(exe_msgs)
     else:
         logger.log("TestBuildAndExecuteProxy","build failed")
@@ -513,9 +513,9 @@ class MultiAgentTestOrchestrator:
         self.build=args.build
         self.build_dir=args.build_dir or ""
         self.build_cmd=args.build_cmd or ""
-        self.execute=args.execute or False
+        self.execute=args.execute
         self.execute_dir=args.execute_dir or ""
-        self.execute_args=args.execute_args or ""
+        self.execute_args=args.execute_args
         self.output_dir = output_dir
         self.max_retries = max_retries
         self.max_context_messages = max_context_messages
