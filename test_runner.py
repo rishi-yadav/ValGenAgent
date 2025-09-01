@@ -461,6 +461,10 @@ def main() -> None:
     parser.add_argument("--build", action="store_true", help="Enable build mode. Build the generated code file using user provided command.")
     parser.add_argument("--build_dir", help="build dir path")
     parser.add_argument("--build_cmd", help="Build command that will be used by agent to build the generated code file.")
+    parser.add_argument("--execute",action="store_true", help="Enable execute mode. Executes the generated binary file using user provided arguments if any.")
+    parser.add_argument("--execute_dir", help="execute dir path: directory path for execution")
+    parser.add_argument("--execute_args", nargs=argparse.REMAINDER, default=[], help="Arguments to be added for execution. ex: ./filename --device gaudi2")
+
     # Step control arguments
     step_group = parser.add_mutually_exclusive_group()
     step_group.add_argument('--generate_plan_only', action='store_true',
@@ -480,6 +484,9 @@ def main() -> None:
         if not args.build_dir or not args.build_cmd:
             parser.error("--build requires --build_dir and --build_cmd")
 
+    if args.execute:
+        if not args.execute_dir or not args.build:
+            parser.error("--execute requires building using --build and also requires execute directrory in --execute_dir")
     try:
         # Dynamically import the module based on the prompt
         module_path = args.prompt_path.replace("/", ".")

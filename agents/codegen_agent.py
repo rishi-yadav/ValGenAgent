@@ -325,7 +325,58 @@ def summarize_log(agent, log: str, context: str) -> str:
         return f" Failed to summarize {context}: {e}"
 
 
-def save_and_build(code: str, filename: str, directory: str,build: bool,  build_cmd: str, build_dir: str,logger) -> str:
+def find_executables(exe_dir: str) -> list[str]:
+    """Find executables in directory."""
+    exe_full_path = os.path.abspath(exe_dir)
+    return [
+        os.path.join(exe_full_path, f)
+        for f in os.listdir(exe_full_path)
+        if os.access(os.path.join(exe_full_path, f), os.X_OK)
+        and not os.path.isdir(os.path.join(exe_full_path, f))
+    ]
+
+
+
+def run_executables(executables: list[str], log_dir: str, execute_args: list, logger) -> list[str]:
+    """Run executables, store all logs in a single file, return status messages."""
+    msgs = []
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # One combined log file
+    combined_log_file = os.path.join(log_dir, f"executables_log_{timestamp}.txt")
+    os.makedirs(log_dir, exist_ok=True)
+
+    with open(combined_log_file, "w", encoding="utf-8") as log_f:
+        for exe in executables:
+            exe_name = os.path.basename(exe)
+            msgs.append(f"Running {exe_name}...")
+            logger.log("TestBuildAndExecuteProxy",f"Running {exe_name}...")
+
+            run_proc = subprocess.run(
+                [exe] + execute_args,
+                cwd=os.path.dirname(exe),
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False
+            )
+
+            # Write header + output for each exe into one file
+            log_f.write(f"\n===== {exe_name} (exit {run_proc.returncode}) =====\n")
+            log_f.write(run_proc.stdout)
+            log_f.write("\n")
+
+            if run_proc.returncode != 0:
+                msgs.append(f"{exe_name} failed (exit {run_proc.returncode}), log saved at {combined_log_file}")
+                logger.log("TestBuildAndExecuteProxy",f"{exe_name} failed (exit {run_proc.returncode})")
+            else:
+                msgs.append(f"{exe_name} succeeded, log saved at {combined_log_file}")
+                logger.log("TestBuildAndExecuteProxy",f"{exe_name} succeeded")
+
+    msgs.append(f"Combined log saved at {combined_log_file}")
+    return msgs
+
+def save_and_build(code: str, filename: str, directory: str,build: bool,  build_cmd: str, build_dir: str,execute: bool, execute_dir: str, execute_args: list, logger) -> str:
     """
     save the test file, and build the file with given build command at the given build dir.
     """
@@ -360,6 +411,15 @@ def save_and_build(code: str, filename: str, directory: str,build: bool,  build_
     msgs.extend(build_msgs)
     if success:
         logger.log("TestBuildAndExecuteProxy","build succeed")
+        if execute:
+            logger.log("TestBuildAndExecuteProxy", "proceeding with execution")
+            executables = find_executables(execute_dir)
+            if not executables:
+                msgs.append(f" No executables found in {execute_dir}")
+            else:
+                msgs.append(f" Found executables: {executables}")
+                exe_msgs = run_executables(executables, execute_dir,execute_args, logger)
+                msgs.extend(exe_msgs)
     else:
         logger.log("TestBuildAndExecuteProxy","build failed")
     return "\n".join(msgs)
@@ -453,6 +513,9 @@ class MultiAgentTestOrchestrator:
         self.build=args.build
         self.build_dir=args.build_dir or ""
         self.build_cmd=args.build_cmd or ""
+        self.execute=args.execute
+        self.execute_dir=args.execute_dir or ""
+        self.execute_args=args.execute_args
         self.output_dir = output_dir
         self.max_retries = max_retries
         self.max_context_messages = max_context_messages
@@ -501,6 +564,9 @@ class MultiAgentTestOrchestrator:
                     build=self.build,
                     build_cmd=self.build_cmd,
                     build_dir=self.build_dir,
+                    execute=self.execute,
+                    execute_dir=self.execute_dir,
+                    execute_args=self.execute_args,
                     logger=self.logger,
                 )
 
