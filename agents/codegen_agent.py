@@ -15,11 +15,14 @@ import glob
 from functools import partial
 from datetime import datetime
 
+
+
 # Add the parent directory to sys.path to enable imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
+from utils.build import save_and_build
 from prompts.save_and_build_agent_system_prompt import SAVE_AND_BUILD_AGENT_SYSTEM_PROMPT
 from utils.expected_patterns import LANGUAGE_PATTERNS
 from utils.openai_endpoints import (
@@ -261,168 +264,8 @@ class TestRunnerUserProxy(autogen.UserProxyAgent):
         self.output_dir = output_dir
 
 
-def save_file(filepath: str, code: str) -> str:
-    """Overwrite file with new code."""
-    try:
-        with open(filepath, "w", encoding="utf-8") as f:
-            f.write(code)
-        return f" Overwritten file: {filepath}"
-    except Exception as e:
-        return f" Failed to write file {filepath}: {e}"
-
-def execute_build_command(build_dir: str, log_dir: str, summarizer_agent, build_cmd: str, logger) -> tuple[bool, list[str]]:
-    """ Run the build command, save log, returns (success, messages)."""
-    msgs = []
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = os.path.join(log_dir, f"build_log_{timestamp}.txt")
-
-    try:
-        msgs.append(f"Running build: {build_cmd} in {build_dir}")
-        logger.log("TestBuildAndExecuteProxy",f"Running build: {build_cmd} in {build_dir}")
-        build_proc = subprocess.run(
-            build_cmd,
-            cwd=build_dir,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            check=False,
-            shell=True
-        )
-
-        with open(log_file, "w", encoding="utf-8") as f:
-            f.write(build_proc.stdout)
-
-        logger.log("TestBuildAndExecuteProxy",f"Full build log saved at: {log_file}")
-
-        if build_proc.returncode != 0:
-            msgs.append(f"Build failed with code {build_proc.returncode}")
-            logger.log("TestBuildAndExecuteProxy","Build failed, summarizing build logs")
-            summary = summarize_log(summarizer_agent, build_proc.stdout, "build log")
-            msgs.append(" Build Log Summary:\n" + summary)
-            return False, msgs
-        else:
-            msgs.append("Build succeeded")
-            logger.log("TestBuildAndExecuteProxy","Build is successful")
-            msgs.append("Build is successful")
-            return True, msgs
-
-    except Exception as e:
-        msgs.append(f" Error during build: {e}")
-        return False, msgs
 
 
-def summarize_log(agent, log: str, context: str) -> str:
-    """Summarize logs using the summarizer agent."""
-    try:
-        reply = agent.generate_reply(
-            messages=[{
-                "role": "user",
-                "content": f"Summarize the following {context}:\n\n{log}"
-            }]
-        )
-        return str(reply)
-    except Exception as e:
-        return f" Failed to summarize {context}: {e}"
-
-
-def find_executables(exe_dir: str) -> list[str]:
-    """Find executables in directory."""
-    exe_full_path = os.path.abspath(exe_dir)
-    return [
-        os.path.join(exe_full_path, f)
-        for f in os.listdir(exe_full_path)
-        if os.access(os.path.join(exe_full_path, f), os.X_OK)
-        and not os.path.isdir(os.path.join(exe_full_path, f))
-    ]
-
-
-
-def run_executables(executables: list[str], log_dir: str, execute_args: list, logger) -> list[str]:
-    """Run executables, store all logs in a single file, return status messages."""
-    msgs = []
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    # One combined log file
-    combined_log_file = os.path.join(log_dir, f"executables_log_{timestamp}.txt")
-    os.makedirs(log_dir, exist_ok=True)
-
-    with open(combined_log_file, "w", encoding="utf-8") as log_f:
-        for exe in executables:
-            exe_name = os.path.basename(exe)
-            msgs.append(f"Running {exe_name}...")
-            logger.log("TestBuildAndExecuteProxy",f"Running {exe_name}...")
-
-            run_proc = subprocess.run(
-                [exe] + execute_args,
-                cwd=os.path.dirname(exe),
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                check=False
-            )
-
-            # Write header + output for each exe into one file
-            log_f.write(f"\n===== {exe_name} (exit {run_proc.returncode}) =====\n")
-            log_f.write(run_proc.stdout)
-            log_f.write("\n")
-
-            if run_proc.returncode != 0:
-                msgs.append(f"{exe_name} failed (exit {run_proc.returncode}), log saved at {combined_log_file}")
-                logger.log("TestBuildAndExecuteProxy",f"{exe_name} failed (exit {run_proc.returncode})")
-            else:
-                msgs.append(f"{exe_name} succeeded, log saved at {combined_log_file}")
-                logger.log("TestBuildAndExecuteProxy",f"{exe_name} succeeded")
-
-    msgs.append(f"Combined log saved at {combined_log_file}")
-    return msgs
-
-def save_and_build(code: str, filename: str, directory: str,build: bool,  build_cmd: str, build_dir: str,execute: bool, execute_dir: str, execute_args: list, logger) -> str:
-    """
-    save the test file, and build the file with given build command at the given build dir.
-    """
-    filepath = os.path.join(directory, filename)
-    os.makedirs(build_dir, exist_ok=True)
-    os.makedirs(directory, exist_ok=True)
-
-    msgs = []
-
-    # Step 1: save file
-    save_file_logs=save_file(filepath, code)
-    logger.log("TestBuildAndExecuteProxy",f"save_file logs: {save_file_logs}")
-    msgs.append(save_file_logs)
-
-    # Step 2: Init summarizer agent
-    summarizer_agent = autogen.ConversableAgent(
-        name="BuildLogSummarizer",
-        system_message="""
-        You are a **Build Log Summarizer Agent**.
-        Your job is to:
-        - Summarize the build log concisely.
-        - Highlight the **errors, compiler diagnostics, and failed tests** clearly.
-        - Give function names and variables related to errors.
-        - <IMPORTANT> Provide debug-ready insights, with 100 lines from start, 100 lines around errors, 100 lines from end. Don't miss any errors at all.
-        - If no errors exist, confirm build success.
-        """,
-        llm_config=llm_config,
-    )
-
-    # Step 3: Run build
-    success, build_msgs = execute_build_command(build_dir, directory, summarizer_agent,build_cmd,logger)
-    msgs.extend(build_msgs)
-    if success:
-        logger.log("TestBuildAndExecuteProxy","build succeed")
-        if execute:
-            logger.log("TestBuildAndExecuteProxy", "proceeding with execution")
-            executables = find_executables(execute_dir)
-            if not executables:
-                msgs.append(f" No executables found in {execute_dir}")
-            else:
-                msgs.append(f" Found executables: {executables}")
-                exe_msgs = run_executables(executables, execute_dir,execute_args, logger)
-                msgs.extend(exe_msgs)
-    else:
-        logger.log("TestBuildAndExecuteProxy","build failed")
-    return "\n".join(msgs)
 
 # Function to save code to a file.
 # The function is registered with the UserProxyAgent to handle code saving requests
@@ -1216,4 +1059,3 @@ def run_test_automation(args, test_plan_path: str,
         import traceback
         traceback.print_exc()
         return False
-
