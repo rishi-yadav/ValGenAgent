@@ -1,10 +1,10 @@
 import os
 import subprocess
 from datetime import datetime
-from utils.execute import ExecutableRunner  
+from utils.execute import ExeRunner  
 import autogen
 
-class BuildRunner:
+class ExeBuilder:
     """
         A class that manages the build process for generated C++ code.  
         It saves the generated source file, compiles it using the specified build command, and, if errors occur, summarizes the build log to highlight issues before retrying.  
@@ -83,7 +83,7 @@ class BuildRunner:
             return f"Failed to summarize {context}: {e}"
 
 
-def save_and_build(code: str, filename: str, directory: str, build: bool, build_cmd: str, build_dir: str, execute: bool, execute_dir: str, execute_args: list, logger, llm_config=None) -> str:
+def save_build_run(code: str, filename: str, directory: str, build: bool, build_cmd: str, build_dir: str, execute: bool, execute_dir: str, execute_args: list, logger, llm_config=None) -> str:
     """
     Save the test file, optionally build it, and optionally run executables.
     """
@@ -95,7 +95,7 @@ def save_and_build(code: str, filename: str, directory: str, build: bool, build_
 
 
 
-    build_runner = BuildRunner(
+    build_runner = ExeBuilder(
         code=code,
         filepath=filepath,
         build_dir=build_dir,
@@ -134,7 +134,7 @@ def save_and_build(code: str, filename: str, directory: str, build: bool, build_
         logger.log("TestBuildAndExecuteProxy", "Build succeeded")
         if execute:
             logger.log("TestBuildAndExecuteProxy", "Proceeding with execution")
-            exe_runner = ExecutableRunner(
+            exe_runner = ExeRunner(
                 exe_dir=execute_dir,
                 log_dir=os.path.join(execute_dir, "logs"),
                 logger=logger,

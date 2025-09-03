@@ -15,14 +15,12 @@ import glob
 from functools import partial
 from datetime import datetime
 
-
-
 # Add the parent directory to sys.path to enable imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from utils.build import save_and_build
+from utils.build import save_build_run
 from prompts.save_and_build_agent_system_prompt import SAVE_AND_BUILD_AGENT_SYSTEM_PROMPT
 from utils.expected_patterns import LANGUAGE_PATTERNS
 from utils.openai_endpoints import (
@@ -30,7 +28,7 @@ from utils.openai_endpoints import (
     INFERENCE_BASE_URL,
     MODEL_INFERENCE
 )
-from utils.file_verify import VerifyFile
+from utils.file_io import FileIO
 
 # Conditional import for vector index to handle missing dependencies
 try:
@@ -59,12 +57,9 @@ llm_config = {
     "temperature": 0.1,
 }
 
-
 INPUT_DIR = 'input_dirs'
 URLS_FILE = f"{INPUT_DIR}/public_urls.txt"
 os.environ["OPENAI_API_BASE"] = EMBEDDING_BASE_URL
-
-
 
 @dataclass
 class TestCase:
@@ -264,10 +259,6 @@ class TestRunnerUserProxy(autogen.UserProxyAgent):
         self.logger = logger
         self.output_dir = output_dir
 
-
-
-
-
 # Function to save code to a file.
 # The function is registered with the UserProxyAgent to handle code saving requests
 def save_code_to_file(code: str, filename: str, directory: str) -> str:
@@ -279,7 +270,6 @@ def save_code_to_file(code: str, filename: str, directory: str) -> str:
         f.write(code)
 
     return f"Code saved successfully to {filepath}"
-
 
 class ContextManagedGroupChat(autogen.GroupChat):
     """GroupChat with automatic context management"""
@@ -401,7 +391,7 @@ class MultiAgentTestOrchestrator:
             )
         elif self.build:
             def wrapped_build_code(code: str, filename: str) -> str:
-                return save_and_build(
+                return save_build_run(
                     code=code,
                     filename=filename,
                     directory=self.output_dir,
@@ -485,7 +475,7 @@ class MultiAgentTestOrchestrator:
         if not kb_success:
             self.logger.log("Orchestrator", "Warning: Knowledge base initialization failed, proceeding without it")
 
-        self.VerifyFile=VerifyFile(self.logger,self.output_dir)
+        self.FileIO=FileIO(self.logger,self.output_dir)
 
     def orchestrate_test_generation(self, test_plan_path: str):
         """Main orchestration method using GroupChat for natural agent communication"""
@@ -517,7 +507,7 @@ class MultiAgentTestOrchestrator:
                 failed_files.append(impl_file)
 
         # Check if all expected files were generated successfully
-        all_files_generated = self.VerifyFile._validate_all_files_generated(implementation_files, successful_files, failed_files)
+        all_files_generated = self.FileIO._validate_all_files_generated(implementation_files, successful_files, failed_files)
 
         # If execute_tests is False, skip the execution step but still validate file generation
         if not self.execute_tests:
@@ -611,7 +601,7 @@ class MultiAgentTestOrchestrator:
             success = self._extract_success_from_chat(language)
 
             # Additionally verify that the specific file was actually created
-            file_actually_created = self.VerifyFile._verify_file_created(impl_file)
+            file_actually_created = self.FileIO._verify_file_created(impl_file)
 
             # Debug logging
             self.logger.log("Orchestrator", f"SUCCESS DETECTION: Found {len(self.group_chat.messages)} messages in chat")
@@ -803,8 +793,6 @@ class MultiAgentTestOrchestrator:
         # Update the group chat messages
         self.group_chat.messages = managed_messages
         self.logger.log("Orchestrator", f"Context managed: reduced to {len(self.group_chat.messages)} messages")
-
-
 
     def _check_generated_test_files(self) -> bool:
         """Check if test files were actually generated and executed successfully"""
