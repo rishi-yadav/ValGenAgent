@@ -1,5 +1,9 @@
-from typing import List
+from typing import List, Dict, Any, Optional, Tuple
 import os
+import json
+from docx import Document
+
+
 
 class FileIO:
     def __init__ (self, logger, output_dir):
@@ -119,3 +123,163 @@ class FileIO:
         except Exception as e:
             self.logger.log("Orchestrator", f"Error verifying file {expected_file}: {e}")
             return False
+
+
+class TestPlanParser:
+    def __init__(self, file_path: str):
+        self.file_path = file_path
+        self.is_json = file_path.endswith('.json')
+        if not self.is_json:
+            self.document = Document(file_path)
+
+    def extract_test_cases(self) -> Tuple[bool, List[Dict[str, Any]], List[str]]:
+        """Extract test cases from the test plan file.
+
+        Returns:
+            tuple: (success: bool, test_cases: List[Dict], implementation_files: List[str])
+        """
+        try:
+            if self.is_json:
+                return self._extract_from_json()
+            else:
+                return self._extract_from_docx()
+        except Exception as e:
+            print(f"Error extracting test cases: {e}")
+            return False, [], []
+
+    def _extract_from_json(self) -> Tuple[bool, List[Dict[str, Any]], List[str]]:
+        try:
+            with open(self.file_path, 'r') as f:
+                test_plan = json.load(f)
+
+            test_cases = []
+            implementation_files = set()
+
+            # Handle different JSON structures
+            if 'tests' in test_plan:
+                tests_section = test_plan['tests']
+
+                # Check if tests is a list (array of test categories)
+                if isinstance(tests_section, list):
+                    for test_category in tests_section:
+                        implementation_file = test_category.get('implementation_file')
+                        if implementation_file:
+                            implementation_files.add(implementation_file)
+
+                        # Extract test cases and add implementation file info to each
+                        for test_case in test_category.get('test_cases', []):
+                            enhanced_test_case = test_case.copy()
+                            enhanced_test_case['implementation_file'] = implementation_file
+                            enhanced_test_case['test_category'] = test_category.get('test_category', '')
+
+                            # Map test_id to id for compatibility
+                            if 'test_id' in enhanced_test_case and 'id' not in enhanced_test_case:
+                                enhanced_test_case['id'] = enhanced_test_case['test_id']
+
+                            test_cases.append(enhanced_test_case)
+
+                # Check if it's the new single test category format (tests as object)
+                elif isinstance(tests_section, dict) and 'test_category' in tests_section and 'implementation_file' in tests_section:
+                    # New format: single test category with implementation file
+                    implementation_file = tests_section.get('implementation_file')
+                    if implementation_file:
+                        implementation_files.add(implementation_file)
+
+                    # Extract test cases and add implementation file info to each
+                    for test_case in tests_section.get('test_cases', []):
+                        # Create a copy of the test case and add implementation file
+                        enhanced_test_case = test_case.copy()
+                        enhanced_test_case['implementation_file'] = implementation_file
+                        enhanced_test_case['test_category'] = tests_section.get('test_category', '')
+
+                        # Map test_id to id for compatibility
+                        if 'test_id' in enhanced_test_case and 'id' not in enhanced_test_case:
+                            enhanced_test_case['id'] = enhanced_test_case['test_id']
+
+                        test_cases.append(enhanced_test_case)
+
+            # Handle the old format with test_categories directly
+            elif 'test_categories' in test_plan:
+                for test_category in test_plan['test_categories']:
+                    if test_category.get('implementation_file'):
+                        implementation_files.add(test_category['implementation_file'])
+                        for test_case in test_category.get('test_cases', []):
+                            test_cases.append(test_case)
+
+            # Handle simple format with direct test_cases (like the original pytorch_collective_operations format)
+            elif 'test_cases' in test_plan:
+                for test_case in test_plan['test_cases']:
+                    # For this format, we'll create a default implementation file name
+                    test_category = test_plan.get('test_category', 'default_tests')
+                    impl_file = f"test_{test_category.lower().replace(' ', '_').replace('.', '_')}.py"
+
+                    enhanced_test_case = test_case.copy()
+                    enhanced_test_case['implementation_file'] = impl_file
+                    enhanced_test_case['test_category'] = test_category
+
+                    # Map test_id to id for compatibility
+                    if 'test_id' in enhanced_test_case and 'id' not in enhanced_test_case:
+                        enhanced_test_case['id'] = enhanced_test_case['test_id']
+
+                    test_cases.append(enhanced_test_case)
+                    implementation_files.add(impl_file)
+
+            return True, test_cases, list(implementation_files)
+
+        except Exception as e:
+            print(f"Error reading JSON test plan: {e}")
+            import traceback
+            traceback.print_exc()
+            return False, [], []
+
+    def _extract_from_docx(self) -> Tuple[bool, List[Dict[str, Any]], List[str]]:
+        try:
+            test_cases = []
+            implementation_files = set()
+            current_test_case = {}
+            for paragraph in self.document.paragraphs:
+                text = paragraph.text.strip()
+                if not text:
+                    continue
+                if 'Implementation file:' in text:
+                    file_name = text.split('Implementation file:')[1].strip()
+                    if file_name.endswith('.py'):
+                        implementation_files.add(file_name)
+                        if current_test_case:
+                            current_test_case['implementation_file'] = file_name
+                if re.match(r'^(Test Case|TC)\s*\d+:', text, re.IGNORECASE):
+                    if current_test_case:
+                        test_cases.append(current_test_case)
+                    current_test_case = self._init_test_case(text)
+                elif current_test_case:
+                    self._update_test_case(current_test_case, text)
+            if current_test_case:
+                test_cases.append(current_test_case)
+            return True, test_cases, list(implementation_files)
+        except Exception as e:
+            print(f"Error extracting from DOCX: {e}")
+            return False, [], []
+
+    def _init_test_case(self, text: str) -> Dict[str, Any]:
+        return {
+            'title': text,
+            'description': '',
+            'steps': [],
+            'expected_results': '',
+            'implementation_file': None,
+            'data_types': []
+        }
+
+    def _update_test_case(self, test_case: Dict[str, Any], text: str) -> None:
+        if text.lower().startswith('steps:'):
+            test_case['steps'] = []
+        elif text.lower().startswith('description:'):
+            test_case['description'] = text.split(':', 1)[1].strip()
+        elif text.lower().startswith('expected result:') or text.lower().startswith('expected_results:'):
+            test_case['expected_results'] = text.split(':', 1)[1].strip()
+        elif text.lower().startswith(('data types:', 'data_types:')):
+            test_case['data_types'] = [dt.strip() for dt in re.split(r'[,;\s]+', text.split(':', 1)[1].strip()) if dt.strip()]
+        elif test_case.get('steps') is not None:
+            test_case['steps'].append(text)
+        else:
+            test_case['description'] += text + '\n'
