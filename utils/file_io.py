@@ -1,7 +1,7 @@
 from typing import List
 import os
 
-class VerifyFile:
+class FileIO:
     def __init__ (self, logger, output_dir):
         self.logger=logger
         self.output_dir=output_dir
