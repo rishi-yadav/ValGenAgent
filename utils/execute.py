@@ -3,7 +3,7 @@ import subprocess
 from datetime import datetime
 
 
-class ExecutableRunner:
+class ExeRunner:
     """Class to find and run executables in a directory, storing logs in one file."""
 
     def __init__(self, exe_dir: str, log_dir: str, logger):
