@@ -20,6 +20,7 @@ parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
+from utils.build import save_build_run
 from prompts.save_and_build_agent_system_prompt import SAVE_AND_BUILD_AGENT_SYSTEM_PROMPT
 from utils.expected_patterns import LANGUAGE_PATTERNS
 from utils.openai_endpoints import (
@@ -27,6 +28,7 @@ from utils.openai_endpoints import (
     INFERENCE_BASE_URL,
     MODEL_INFERENCE
 )
+from utils.file_io import FileIO
 
 # Conditional import for vector index to handle missing dependencies
 try:
@@ -55,12 +57,9 @@ llm_config = {
     "temperature": 0.1,
 }
 
-
 INPUT_DIR = 'input_dirs'
 URLS_FILE = f"{INPUT_DIR}/public_urls.txt"
 os.environ["OPENAI_API_BASE"] = EMBEDDING_BASE_URL
-
-
 
 @dataclass
 class TestCase:
@@ -260,170 +259,6 @@ class TestRunnerUserProxy(autogen.UserProxyAgent):
         self.logger = logger
         self.output_dir = output_dir
 
-
-def save_file(filepath: str, code: str) -> str:
-    """Overwrite file with new code."""
-    try:
-        with open(filepath, "w", encoding="utf-8") as f:
-            f.write(code)
-        return f" Overwritten file: {filepath}"
-    except Exception as e:
-        return f" Failed to write file {filepath}: {e}"
-
-def execute_build_command(build_dir: str, log_dir: str, summarizer_agent, build_cmd: str, logger) -> tuple[bool, list[str]]:
-    """ Run the build command, save log, returns (success, messages)."""
-    msgs = []
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = os.path.join(log_dir, f"build_log_{timestamp}.txt")
-
-    try:
-        msgs.append(f"Running build: {build_cmd} in {build_dir}")
-        logger.log("TestBuildAndExecuteProxy",f"Running build: {build_cmd} in {build_dir}")
-        build_proc = subprocess.run(
-            build_cmd,
-            cwd=build_dir,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            check=False,
-            shell=True
-        )
-
-        with open(log_file, "w", encoding="utf-8") as f:
-            f.write(build_proc.stdout)
-
-        logger.log("TestBuildAndExecuteProxy",f"Full build log saved at: {log_file}")
-
-        if build_proc.returncode != 0:
-            msgs.append(f"Build failed with code {build_proc.returncode}")
-            logger.log("TestBuildAndExecuteProxy","Build failed, summarizing build logs")
-            summary = summarize_log(summarizer_agent, build_proc.stdout, "build log")
-            msgs.append(" Build Log Summary:\n" + summary)
-            return False, msgs
-        else:
-            msgs.append("Build succeeded")
-            logger.log("TestBuildAndExecuteProxy","Build is successful")
-            msgs.append("Build is successful")
-            return True, msgs
-
-    except Exception as e:
-        msgs.append(f" Error during build: {e}")
-        return False, msgs
-
-
-def summarize_log(agent, log: str, context: str) -> str:
-    """Summarize logs using the summarizer agent."""
-    try:
-        reply = agent.generate_reply(
-            messages=[{
-                "role": "user",
-                "content": f"Summarize the following {context}:\n\n{log}"
-            }]
-        )
-        return str(reply)
-    except Exception as e:
-        return f" Failed to summarize {context}: {e}"
-
-
-def find_executables(exe_dir: str) -> list[str]:
-    """Find executables in directory."""
-    exe_full_path = os.path.abspath(exe_dir)
-    return [
-        os.path.join(exe_full_path, f)
-        for f in os.listdir(exe_full_path)
-        if os.access(os.path.join(exe_full_path, f), os.X_OK)
-        and not os.path.isdir(os.path.join(exe_full_path, f))
-    ]
-
-
-
-def run_executables(executables: list[str], log_dir: str, execute_args: list, logger) -> list[str]:
-    """Run executables, store all logs in a single file, return status messages."""
-    msgs = []
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    # One combined log file
-    combined_log_file = os.path.join(log_dir, f"executables_log_{timestamp}.txt")
-    os.makedirs(log_dir, exist_ok=True)
-
-    with open(combined_log_file, "w", encoding="utf-8") as log_f:
-        for exe in executables:
-            exe_name = os.path.basename(exe)
-            msgs.append(f"Running {exe_name}...")
-            logger.log("TestBuildAndExecuteProxy",f"Running {exe_name}...")
-
-            run_proc = subprocess.run(
-                [exe] + execute_args,
-                cwd=os.path.dirname(exe),
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                check=False
-            )
-
-            # Write header + output for each exe into one file
-            log_f.write(f"\n===== {exe_name} (exit {run_proc.returncode}) =====\n")
-            log_f.write(run_proc.stdout)
-            log_f.write("\n")
-
-            if run_proc.returncode != 0:
-                msgs.append(f"{exe_name} failed (exit {run_proc.returncode}), log saved at {combined_log_file}")
-                logger.log("TestBuildAndExecuteProxy",f"{exe_name} failed (exit {run_proc.returncode})")
-            else:
-                msgs.append(f"{exe_name} succeeded, log saved at {combined_log_file}")
-                logger.log("TestBuildAndExecuteProxy",f"{exe_name} succeeded")
-
-    msgs.append(f"Combined log saved at {combined_log_file}")
-    return msgs
-
-def save_and_build(code: str, filename: str, directory: str,build: bool,  build_cmd: str, build_dir: str,execute: bool, execute_dir: str, execute_args: list, logger) -> str:
-    """
-    save the test file, and build the file with given build command at the given build dir.
-    """
-    filepath = os.path.join(directory, filename)
-    os.makedirs(build_dir, exist_ok=True)
-    os.makedirs(directory, exist_ok=True)
-
-    msgs = []
-
-    # Step 1: save file
-    save_file_logs=save_file(filepath, code)
-    logger.log("TestBuildAndExecuteProxy",f"save_file logs: {save_file_logs}")
-    msgs.append(save_file_logs)
-
-    # Step 2: Init summarizer agent
-    summarizer_agent = autogen.ConversableAgent(
-        name="BuildLogSummarizer",
-        system_message="""
-        You are a **Build Log Summarizer Agent**.
-        Your job is to:
-        - Summarize the build log concisely.
-        - Highlight the **errors, compiler diagnostics, and failed tests** clearly.
-        - Give function names and variables related to errors.
-        - <IMPORTANT> Provide debug-ready insights, with 100 lines from start, 100 lines around errors, 100 lines from end. Don't miss any errors at all.
-        - If no errors exist, confirm build success.
-        """,
-        llm_config=llm_config,
-    )
-
-    # Step 3: Run build
-    success, build_msgs = execute_build_command(build_dir, directory, summarizer_agent,build_cmd,logger)
-    msgs.extend(build_msgs)
-    if success:
-        logger.log("TestBuildAndExecuteProxy","build succeed")
-        if execute:
-            logger.log("TestBuildAndExecuteProxy", "proceeding with execution")
-            executables = find_executables(execute_dir)
-            if not executables:
-                msgs.append(f" No executables found in {execute_dir}")
-            else:
-                msgs.append(f" Found executables: {executables}")
-                exe_msgs = run_executables(executables, execute_dir,execute_args, logger)
-                msgs.extend(exe_msgs)
-    else:
-        logger.log("TestBuildAndExecuteProxy","build failed")
-    return "\n".join(msgs)
-
 # Function to save code to a file.
 # The function is registered with the UserProxyAgent to handle code saving requests
 def save_code_to_file(code: str, filename: str, directory: str) -> str:
@@ -435,7 +270,6 @@ def save_code_to_file(code: str, filename: str, directory: str) -> str:
         f.write(code)
 
     return f"Code saved successfully to {filepath}"
-
 
 class ContextManagedGroupChat(autogen.GroupChat):
     """GroupChat with automatic context management"""
@@ -557,7 +391,7 @@ class MultiAgentTestOrchestrator:
             )
         elif self.build:
             def wrapped_build_code(code: str, filename: str) -> str:
-                return save_and_build(
+                return save_build_run(
                     code=code,
                     filename=filename,
                     directory=self.output_dir,
@@ -568,6 +402,7 @@ class MultiAgentTestOrchestrator:
                     execute_dir=self.execute_dir,
                     execute_args=self.execute_args,
                     logger=self.logger,
+                    llm_config=llm_config
                 )
 
             self.runner_agent = autogen.ConversableAgent(
@@ -640,6 +475,8 @@ class MultiAgentTestOrchestrator:
         if not kb_success:
             self.logger.log("Orchestrator", "Warning: Knowledge base initialization failed, proceeding without it")
 
+        self.FileIO=FileIO(self.logger,self.output_dir)
+
     def orchestrate_test_generation(self, test_plan_path: str):
         """Main orchestration method using GroupChat for natural agent communication"""
         self.logger.log("Orchestrator", f"Starting multi-agent test generation from {test_plan_path}")
@@ -670,7 +507,7 @@ class MultiAgentTestOrchestrator:
                 failed_files.append(impl_file)
 
         # Check if all expected files were generated successfully
-        all_files_generated = self._validate_all_files_generated(implementation_files, successful_files, failed_files)
+        all_files_generated = self.FileIO._validate_all_files_generated(implementation_files, successful_files, failed_files)
 
         # If execute_tests is False, skip the execution step but still validate file generation
         if not self.execute_tests:
@@ -764,7 +601,7 @@ class MultiAgentTestOrchestrator:
             success = self._extract_success_from_chat(language)
 
             # Additionally verify that the specific file was actually created
-            file_actually_created = self._verify_file_created(impl_file)
+            file_actually_created = self.FileIO._verify_file_created(impl_file)
 
             # Debug logging
             self.logger.log("Orchestrator", f"SUCCESS DETECTION: Found {len(self.group_chat.messages)} messages in chat")
@@ -957,120 +794,6 @@ class MultiAgentTestOrchestrator:
         self.group_chat.messages = managed_messages
         self.logger.log("Orchestrator", f"Context managed: reduced to {len(self.group_chat.messages)} messages")
 
-    def _validate_all_files_generated(self, expected_files: List[str], successful_files: List[str], failed_files: List[str]) -> bool:
-        """Validate that all expected files were generated successfully and provide detailed reporting"""
-
-        # Check which files actually exist in the output directory
-        actually_generated_files = []
-        missing_files = []
-
-        try:
-            if os.path.exists(self.output_dir):
-                existing_files = set(os.listdir(self.output_dir))
-
-                for expected_file in expected_files:
-                    if expected_file in existing_files:
-                        actually_generated_files.append(expected_file)
-                    else:
-                        missing_files.append(expected_file)
-            else:
-                missing_files = expected_files.copy()
-        except Exception as e:
-            self.logger.log("Orchestrator", f"Error checking output directory: {e}")
-            missing_files = expected_files.copy()
-
-        # Print detailed file generation report
-        self.logger.log("Orchestrator", "===== FILE GENERATION REPORT ======")
-        self.logger.log("Orchestrator", f"Expected files: {len(expected_files)}")
-        self.logger.log("Orchestrator", f"Successfully processed: {len(successful_files)}")
-        self.logger.log("Orchestrator", f"Actually generated: {len(actually_generated_files)}")
-
-        if actually_generated_files:
-            self.logger.log("Orchestrator", f"Generated files: {actually_generated_files}")
-
-        if missing_files:
-            self.logger.log("Orchestrator", f"Missing files: {missing_files}")
-
-        if failed_files:
-            self.logger.log("Orchestrator", f"Failed to process: {failed_files}")
-
-        # Determine overall success
-        all_files_generated = len(missing_files) == 0 and len(actually_generated_files) == len(expected_files)
-
-        if all_files_generated:
-            self.logger.log("Orchestrator", "SUCCESS: All expected files were generated successfully!")
-        else:
-            self.logger.log("Orchestrator", f"PARTIAL SUCCESS: Only {len(actually_generated_files)}/{len(expected_files)} files were generated")
-            self.logger.log("Orchestrator", "This is considered a failure as all files must be generated")
-
-        self.logger.log("Orchestrator", "===== END REPORT =====")
-
-        return all_files_generated
-
-    def _verify_file_created(self, expected_file: str) -> bool:
-        """Verify that a specific file was actually created in the output directory with meaningful content"""
-        try:
-            if not os.path.exists(self.output_dir):
-                return False
-
-            extensions_and_indicators = {
-                '.py': ['def test_', 'import pytest', 'class Test'],
-                '.cpp': ['TEST(', 'ASSERT_', 'EXPECT_','TEST','TEST_F','INSTANTIATE_TEST_SUITE_P','cout','iostream'],
-                '.c': ['printf'],
-                '.asm': ['; Test', '; Assert', '; Expect']  # Assembly comments might indicate test content
-            }
-
-            file_path = os.path.join(self.output_dir, expected_file)
-            exists = False
-
-            expected_name, expected_ext = os.path.splitext(expected_file)  # name + extension
-
-            for fname in os.listdir(self.output_dir):
-                fname_no_ext, fname_ext = os.path.splitext(fname)
-                if expected_name in fname_no_ext and expected_ext == fname_ext:  # match both
-                    exists = True
-                    file_path = os.path.join(self.output_dir, fname)
-                    break
-
-
-            if exists:
-                # Check if file has meaningful content (not empty)
-                file_size = os.path.getsize(file_path)
-                if file_size > 0:
-                   # Also check if it contains test-like content
-                    _, ext = os.path.splitext(expected_file)
-
-                    # Get the test indicators for the file extension
-                    indicators = extensions_and_indicators.get(ext, [])
-
-                    try:
-                        with open(file_path, 'r', encoding='utf-8') as f:
-                            content = f.read()
-                        # Look for test indicators
-                        has_test_content = any(indicator in content for indicator in indicators)
-
-                        if has_test_content:
-                            self.logger.log("Orchestrator", f"File verified with test content: {expected_file} ({file_size} bytes)")
-                            return True
-                        else:
-                            self.logger.log("Orchestrator", f"File exists but lacks test content: {expected_file}")
-                            return False
-
-                    except Exception as read_error:
-                        self.logger.log("Orchestrator", f"File exists but couldn't read content: {expected_file} - {read_error}")
-                        # Still consider it valid if file exists and has size
-                        return True
-                else:
-                    self.logger.log("Orchestrator", f"File exists but is empty: {expected_file}")
-                    return False
-            else:
-                self.logger.log("Orchestrator", f"File not found: {expected_file}")
-                return False
-
-        except Exception as e:
-            self.logger.log("Orchestrator", f"Error verifying file {expected_file}: {e}")
-            return False
-
     def _check_generated_test_files(self) -> bool:
         """Check if test files were actually generated and executed successfully"""
         try:
@@ -1216,4 +939,3 @@ def run_test_automation(args, test_plan_path: str,
         import traceback
         traceback.print_exc()
         return False
-
