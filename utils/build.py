@@ -2,7 +2,10 @@ import os
 import subprocess
 from datetime import datetime
 from utils.execute import ExeRunner  
+from utils.logging_config import get_logger
 import autogen
+
+logging=get_logger()
 
 class ExeBuilder:
     """
@@ -20,11 +23,11 @@ class ExeBuilder:
         self.logger = logger
 
     def save_file(self) -> str:
-        """Overwrite file with new code."""
+        """save file with new code."""
         try:
             with open(self.filepath, "w", encoding="utf-8") as f:
                 f.write(self.code)
-            return f"Overwritten file: {self.filepath}"
+            return f"saved file: {self.filepath}"
         except Exception as e:
             return f"Failed to write file {self.filepath}: {e}"
 
@@ -34,25 +37,39 @@ class ExeBuilder:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         log_file = os.path.join(self.log_dir, f"build_log_{timestamp}.txt")
 
+
+        logging.debug("Build started, waiting for output...")
         try:
             msgs.append(f"Running build: {self.build_cmd} in {self.build_dir}")
             self.logger.log("TestBuildAndExecuteProxy", f"Running build: {self.build_cmd} in {self.build_dir}")
+
 
             build_proc = subprocess.run(
                 self.build_cmd,
                 cwd=self.build_dir,
                 text=True,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
+                stderr=subprocess.PIPE,
                 check=False,
                 shell=True
             )
 
+            # Log stderr as ERROR
+            if build_proc.stderr:
+                for line in build_proc.stderr.splitlines():
+                    line = line.strip()
+                    if line:
+                        logging.error(f"BUILD ERROR: {line}")
+
+
+            logging.debug("Build finished, waiting for exit code...")
+            
             os.makedirs(self.log_dir, exist_ok=True)
             with open(log_file, "w", encoding="utf-8") as f:
                 f.write(build_proc.stdout)
+                f.write(build_proc.stderr)
 
-            self.logger.log("TestBuildAndExecuteProxy", f"Full build log saved at: {log_file}")
+            self.logger.log("TestBuildAndExecuteProxy", f"Please refer to the full logs here[ Full build log saved at: {log_file} ]")
 
             if build_proc.returncode != 0:
                 msgs.append(f"Build failed with code {build_proc.returncode}")
@@ -92,8 +109,6 @@ def save_build_run(code: str, filename: str, directory: str, build: bool, build_
     os.makedirs(directory, exist_ok=True)
 
     msgs = []
-
-
 
     build_runner = ExeBuilder(
         code=code,
