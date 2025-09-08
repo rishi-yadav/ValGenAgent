@@ -28,6 +28,7 @@ import importlib
 
 # Import the new OpenAI API key utility
 from utils.openai_api_key_utils import get_openai_api_key
+from utils.logging_config import setup_logging
 
 # Import the new document processor
 from utils.document_processor import DocumentProcessor
@@ -430,6 +431,7 @@ class TestWorkflowRunner:
         return True
 
 def main() -> None:
+    setup_logging()
     parser = argparse.ArgumentParser(
         description='Run the complete test workflow using a feature input file and static input_dirs directory',
         formatter_class=argparse.RawDescriptionHelpFormatter,

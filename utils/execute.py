@@ -1,7 +1,9 @@
 import os
 import subprocess
 from datetime import datetime
+from utils.logging_config import get_logger
 
+logging=get_logger()
 
 class ExeRunner:
     """Class to find and run executables in a directory, storing logs in one file."""
@@ -35,19 +37,37 @@ class ExeRunner:
                 msgs.append(f"Running {exe_name}...")
                 self.logger.log("TestBuildAndExecuteProxy", f"Running {exe_name}...")
 
+                logging.debug("Execution started, waiting for output...")
+
                 run_proc = subprocess.run(
                     [exe] + execute_args,
                     cwd=os.path.dirname(exe),
                     text=True,
                     stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
+                    stderr=subprocess.PIPE,
                     check=False
                 )
+
+
+                if run_proc.stdout:
+                    for line in run_proc.stdout.splitlines():
+                        line = line.strip()
+                        if line:
+                            logging.info(f"EXECUTE STDOUT: {line}")
+
+                if run_proc.stderr:
+                    for line in run_proc.stderr.splitlines():
+                        line = line.strip()
+                        if line:
+                            logging.error(f"EXECUTE STDERR: {line}")
 
                 # Write header + output for each exe into one file
                 log_f.write(f"\n===== {exe_name} (exit {run_proc.returncode}) =====\n")
                 log_f.write(run_proc.stdout)
+                log_f.write(run_proc.stderr)
                 log_f.write("\n")
+
+                logging.debug("Execution finished, waiting for exit code...")
 
                 if run_proc.returncode != 0:
                     msg = f"{exe_name} failed (exit {run_proc.returncode}), log saved at {combined_log_file}"
