@@ -2,10 +2,11 @@ import os
 import subprocess
 from datetime import datetime
 from utils.execute import ExeRunner  
-from utils.logging_config import get_logger
 import autogen
+import logging
 
-logging=get_logger()
+logging = logging.getLogger("VCA") 
+
 
 class ExeBuilder:
     """

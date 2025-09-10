@@ -442,7 +442,6 @@ class TestWorkflowRunner:
         return True
 
 def main() -> None:
-    setup_logging()
     parser = argparse.ArgumentParser(
         description='Run the complete test workflow using a feature input file and static input_dirs directory',
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -467,7 +466,7 @@ def main() -> None:
     parser.add_argument('--output_dir', default='test_results', help='Output directory for all artifacts')
     parser.add_argument('--test_plan', help='Path to existing test plan (optional)')
     parser.add_argument('--feature_input_file', help='Path to feature input JSON file containing name and description fields')
-    parser.add_argument('--verbose', action='store_true', help='Enable verbose output')
+    parser.add_argument("--verbose",action="store_true",help="Enable info-level logging instead of error-only.",)
     parser.add_argument('--code_dir', default='./code', help='Path to the code directory for RAG.')
     parser.add_argument('--remove_index_db', action='store_true', help='deletes the already created index db for RAG')
     parser.add_argument('--add_context_dir', help='provide all files as context to the pipeline, and the index db will not be used')
@@ -491,6 +490,11 @@ def main() -> None:
     parser.add_argument('--prompt_path', type=str, required=True,
                         help='path to the system prompts directory to use for the test generation workflow.')
     args = parser.parse_args()
+
+    if args.verbose:
+        setup_logging(log_level='DEBUG')
+    else:
+        setup_logging()
 
     if args.build:
         if not args.build_dir or not args.build_cmd:

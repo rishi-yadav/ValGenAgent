@@ -2,16 +2,22 @@ import logging
 import logging.handlers
 import os
 from pathlib import Path
+from datetime import datetime
 
-project_logger=None
 
-def setup_logging(log_dir: str = "logs", log_file: str = "app.log", level=logging.DEBUG):
+def setup_logging(log_level=logging.WARNING):
     """Setup global logging configuration."""
-    Path(log_dir).mkdir(parents=True, exist_ok=True)
-    log_path = os.path.join(log_dir, log_file)
 
-    logger = logging.getLogger("Valgenagent_logger")  # root project logger
-    logger.setLevel(level)
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    log_file = f"vca_{timestamp}.log"
+    Path('logs').mkdir(parents=True, exist_ok=True)
+    log_path = os.path.join('logs', log_file)
+    
+    logger = logging.getLogger()
+    logger.setLevel(logging.WARNING) # default: suppress 3rd party logs (INFO/DEBUG)
+
+    logger = logging.getLogger("VCA") 
+    logger.setLevel(log_level)
 
     if logger.hasHandlers():
         return logger  # already configured
@@ -22,19 +28,20 @@ def setup_logging(log_dir: str = "logs", log_file: str = "app.log", level=loggin
     )
 
     # Console handler
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.DEBUG)
-    console_handler.setFormatter(log_format)
-    logger.addHandler(console_handler)
+    console_stdout_handler = logging.StreamHandler()
+    console_stdout_handler.setLevel(logging.DEBUG)
+    console_stdout_handler.setFormatter(log_format)
+    logger.addHandler(console_stdout_handler)
+
+    console_stderr_handler = logging.StreamHandler()
+    console_stderr_handler.setLevel(logging.WARNING)
+    console_stderr_handler.setFormatter(log_format)
+    logger.addHandler(console_stderr_handler)
 
     # File handler (rotating logs)
     file_handler = logging.handlers.RotatingFileHandler(
         log_path, maxBytes=5*1024*1024, backupCount=5, encoding="utf-8"
     )
-    file_handler.setLevel(level)
+    file_handler.setLevel(log_level)
     file_handler.setFormatter(log_format)
     logger.addHandler(file_handler)
-    project_logger=logger
-
-def get_logger():
-     return logging.getLogger("Valgenagent_logger")

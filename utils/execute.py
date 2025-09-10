@@ -1,9 +1,10 @@
 import os
 import subprocess
 from datetime import datetime
-from utils.logging_config import get_logger
+import logging
 
-logging=get_logger()
+logging = logging.getLogger("VCA") 
+
 
 class ExeRunner:
     """Class to find and run executables in a directory, storing logs in one file."""
