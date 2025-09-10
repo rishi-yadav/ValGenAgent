@@ -21,6 +21,8 @@ def setup_logging(log_level=logging.WARNING, project_namespace=None):
         logger = logging.getLogger(project_namespace) 
         logger.setLevel(log_level)
 
+    logger.propagate = False
+
     if logger.handlers:
         return logger
 
