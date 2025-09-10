@@ -8,7 +8,6 @@ from datetime import datetime
 
 def setup_logging(log_level=logging.WARNING, project_namespace=None):
     """Setup global logging configuration."""
-    import pdb;pdb.set_trace()
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     log_file = f"vca_{timestamp}.log"
     Path('logs').mkdir(parents=True, exist_ok=True)
