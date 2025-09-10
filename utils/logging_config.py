@@ -13,8 +13,8 @@ def setup_logging(log_level=logging.WARNING):
     Path('logs').mkdir(parents=True, exist_ok=True)
     log_path = os.path.join('logs', log_file)
     
-    logger = logging.getLogger()
-    logger.setLevel(logging.WARNING) # default: suppress 3rd party logs (INFO/DEBUG)
+    default_logger = logging.getLogger()
+    default_logger.setLevel(logging.WARNING) # default: suppress 3rd party logs (INFO/DEBUG)
 
     logger = logging.getLogger("VCA") 
     logger.setLevel(log_level)

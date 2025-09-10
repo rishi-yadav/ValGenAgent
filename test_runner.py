@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from dotenv import load_dotenv
 import shutil
 import importlib
-
+import logging
 # Import the new OpenAI API key utility
 from utils.openai_api_key_utils import get_openai_api_key
 from utils.logging_config import setup_logging
@@ -491,10 +491,8 @@ def main() -> None:
                         help='path to the system prompts directory to use for the test generation workflow.')
     args = parser.parse_args()
 
-    if args.verbose:
-        setup_logging(log_level='DEBUG')
-    else:
-        setup_logging()
+    log_level = logging.INFO if args.verbose else logging.WARNING
+    setup_logging(log_level)
 
     if args.build:
         if not args.build_dir or not args.build_cmd:
