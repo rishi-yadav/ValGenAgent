@@ -492,7 +492,7 @@ def main() -> None:
     args = parser.parse_args()
 
     log_level = logging.INFO if args.verbose else logging.WARNING
-    setup_logging(log_level)
+    setup_logging(log_level,project_namespace="VCA")
 
     if args.build:
         if not args.build_dir or not args.build_cmd:
