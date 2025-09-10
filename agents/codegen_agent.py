@@ -177,7 +177,6 @@ class MultiAgentTestOrchestrator:
     def __init__(self, args, output_dir: str,
                  max_retries: int = 2,
                  max_context_messages: int = 25,
-                 execute_tests: bool = True,
                  code_agent_prompt: str = "",
                  review_agent_prompt: str = "",
                  test_coordinator_prompt: str = ""):
@@ -185,7 +184,7 @@ class MultiAgentTestOrchestrator:
         self.build=args.build
         self.build_dir=args.build_dir or ""
         self.build_cmd=args.build_cmd or ""
-        self.execute=args.execute
+        self.execute_cpp=args.execute_cpp
         self.execute_dir=args.execute_dir or ""
         self.execute_args=args.execute_args
         self.output_dir = output_dir
@@ -193,7 +192,7 @@ class MultiAgentTestOrchestrator:
         self.max_context_messages = max_context_messages
         self.logger = MessageLogger()
         self.kb = None # Knowledge base instance if available
-        self.execute_tests = execute_tests
+        self.execute_python = args.execute_python
         self.code_agent_prompt = code_agent_prompt
         self.review_agent_prompt = review_agent_prompt
         self.test_coordinator_prompt = test_coordinator_prompt
@@ -216,8 +215,9 @@ class MultiAgentTestOrchestrator:
             system_message=self.review_agent_prompt)
 
         # Create a runner agent to execute tests
-        if self.execute_tests:
+        if self.execute_python:
             # Full execution capability when tests should be executed
+            print('i am here and its true')
             self.runner_agent = autogen.UserProxyAgent(
                 name="TestExecutionProxy",
                 human_input_mode="NEVER",
@@ -236,7 +236,7 @@ class MultiAgentTestOrchestrator:
                     build=self.build,
                     build_cmd=self.build_cmd,
                     build_dir=self.build_dir,
-                    execute=self.execute,
+                    execute=self.execute_cpp,
                     execute_dir=self.execute_dir,
                     execute_args=self.execute_args,
                     logger=self.logger,
@@ -347,8 +347,8 @@ class MultiAgentTestOrchestrator:
         # Check if all expected files were generated successfully
         all_files_generated = self.FileIO._validate_all_files_generated(implementation_files, successful_files, failed_files)
 
-        # If execute_tests is False, skip the execution step but still validate file generation
-        if not self.execute_tests:
+        # If execute_python is False, skip the execution step but still validate file generation
+        if not self.execute_python and not self.execute_cpp:
             self.logger.log("Orchestrator", "Skipping test execution as per configuration.")
             return all_files_generated
 
@@ -371,7 +371,9 @@ class MultiAgentTestOrchestrator:
 
         # Create initial message to start the group chat
         execution_note = ""
-        if not self.execute_tests:
+        if self.build and not self.execute_cpp:
+            execution_note = "\n\nGenerate, review, save, and build the test code."
+        elif not self.execute_cpp and not self.execute_python:
             execution_note = "\n\nNOTE: Test execution is disabled. Only generate, review, and save the test code to files. Do not execute the tests."
         else:
             execution_note = "\n\nGenerate, review, save, and execute the test code."
@@ -505,8 +507,8 @@ class MultiAgentTestOrchestrator:
                     self.logger.log("Orchestrator", f"TEST GENERATION PATTERN MATCHED: '{pattern}' in GroupChat message")
                     return True
 
-        # Check for file saving patterns if execute_tests is False
-        if not self.execute_tests:
+        # Check for file saving patterns if execute_python is False
+        if not self.execute_python or not self.execute_cpp:
             for message in self.group_chat.messages:
                 content = str(message.get('content', ''))
                 for pattern in patterns['file_saving']:
@@ -514,8 +516,8 @@ class MultiAgentTestOrchestrator:
                         self.logger.log("Orchestrator", f"FILE SAVING PATTERN MATCHED: '{pattern}' in GroupChat message")
                         return True
 
-        # Check for execution success patterns if execute_tests is True
-        if self.execute_tests:
+        # Check for execution success patterns if execute_python is True
+        if self.execute_python or self.execute_cpp:
             for message in self.group_chat.messages:
                 content = str(message.get('content', ''))
                 for pattern in patterns['execution']:
@@ -657,7 +659,6 @@ def run_test_automation(args, test_plan_path: str,
                         output_dir: str = "generated_tests",
                        max_retries: int = 20,
                        max_context: int = 25,
-                       execute_tests: bool = True,
                        code_agent_prompt: str = "",
                        review_agent_prompt: str = "",
                        test_coordinator_prompt: str = "") -> bool:
@@ -670,7 +671,6 @@ def run_test_automation(args, test_plan_path: str,
         output_dir: Output directory for generated tests
         max_retries: Maximum retries for code correction
         max_context: Maximum context messages in GroupChat
-        execute_tests: Whether to execute the generated tests
 
     Returns:
         bool: True if successful, False otherwise
@@ -692,7 +692,6 @@ def run_test_automation(args, test_plan_path: str,
             print(f"Output Directory: {output_dir}")
             print(f"Max Retries: {max_retries}")
             print(f"Max Context Messages: {max_context}")
-            print(f"Execute Tests: {'Yes' if execute_tests else 'No'}")
             print("=" * 40)
 
         # Initialize and run the multi-agent orchestrator
@@ -701,7 +700,6 @@ def run_test_automation(args, test_plan_path: str,
             output_dir=output_dir,
             max_retries=max_retries,
             max_context_messages=max_context,
-            execute_tests=execute_tests,
             code_agent_prompt=code_agent_prompt,
             review_agent_prompt=review_agent_prompt,
             test_coordinator_prompt=test_coordinator_prompt

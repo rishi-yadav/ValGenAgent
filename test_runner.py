@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from dotenv import load_dotenv
 import shutil
 import importlib
-
+import logging
 # Import the new OpenAI API key utility
 from utils.openai_api_key_utils import get_openai_api_key
 from utils.logging_config import setup_logging
@@ -214,7 +214,7 @@ class TestWorkflowRunner:
             traceback.print_exc()
             return False, ""
 
-    def run_test_automation(self, test_plan_file: str, execute_tests: bool = True) -> bool:
+    def run_test_automation(self, test_plan_file: str) -> bool:
         """Run test automation agent to generate and execute tests."""
         print("Initializing test automation...")
         try:
@@ -228,7 +228,6 @@ class TestWorkflowRunner:
                 output_dir=output_dir,
                 max_retries=2,  # default value
                 max_context=25,  # default value
-                execute_tests=execute_tests,
                 code_agent_prompt=self.code_agent_prompt,
                 review_agent_prompt=self.review_agent_prompt,
                 test_coordinator_prompt=self.test_coordinator_prompt,
@@ -238,8 +237,10 @@ class TestWorkflowRunner:
                 print("Error in test automation: Test generation failed")
                 return False
 
-            if execute_tests:
+            if self.args.execute_python or self.args.execute_cpp:
                 print("Test generation and execution completed")
+            elif self.args.build:
+                print("Test generation and build completed")
             else:
                 print("Test code generation completed")
 
@@ -312,7 +313,7 @@ class TestWorkflowRunner:
         except Exception as e:
             print(f"Error saving results to Excel: {e}")
 
-    def print_workflow_summary(self, execute_tests: bool = True):
+    def print_workflow_summary(self):
         """Print a summary of the workflow configuration."""
         print("=" * 60)
         print(f"Test Workflow Configuration")
@@ -320,7 +321,11 @@ class TestWorkflowRunner:
         print(f"Output Directory: {self.output_dir}")
         print(f"Generate Test Plan: {'Yes' if self.generate_plan else 'No'}")
         print(f"Run Test Automation: {'Yes' if self.run_automation else 'No'}")
-        print(f"Execute Tests: {'Yes' if execute_tests else 'No'}")
+        if self.args.execute_python:
+            print(f"Execute Python Tests: {'Yes' if self.args.execute_python else 'No'}")
+        elif self.args.build:
+            print(f"Build CPP Tests: {'Yes' if self.args.build else "No"}")
+            print(f"Execute CPP Tests: {'Yes' if self.args.execute_cpp else "No"}")
         if self.test_plan_file:
             print(f"Test Plan File: {self.test_plan_file}")
         if self.feature_input_file:
@@ -330,10 +335,10 @@ class TestWorkflowRunner:
         print(f"  - URLs File: {self.input_dirs_path / 'public_urls_testplan.txt'}")
         print("=" * 60)
 
-    def run(self, execute_tests: bool = True) -> bool:
+    def run(self) -> bool:
         """Run the complete test workflow."""
         # Print workflow configuration
-        self.print_workflow_summary(execute_tests)
+        self.print_workflow_summary()
 
         workflow_start = time.time()
         test_plan_file = None
@@ -380,14 +385,16 @@ class TestWorkflowRunner:
         # Step 2: Run test automation (if enabled)
         if self.run_automation:
             print("\n" + "="*60)
-            if execute_tests:
+            if self.args.execute_python or self.args.execute_cpp:
                 print("STAGE 2: TEST CODE GENERATION & EXECUTION")
+            elif self.args.build:
+                print("STAGE 2: TEST CODE GENERATION & BUILD")
             else:
                 print("STAGE 2: TEST CODE GENERATION")
             print("="*60)
             stage2_start = time.time()
 
-            if not self.run_test_automation(test_plan_file, execute_tests):
+            if not self.run_test_automation(test_plan_file):
                 print("FAILED: Failed to run test automation.")
                 return False
 
@@ -395,7 +402,7 @@ class TestWorkflowRunner:
             print(f"SUCCESS: Stage 2 completed successfully in {stage2_time:.2f} seconds")
 
             # Step 3: Collect and save results (only if automation ran and tests are executed)
-            if execute_tests:
+            if self.args.execute_python:
                 print("\n" + "="*60)
                 print("STAGE 3: RESULTS COLLECTION & REPORTING")
                 print("="*60)
@@ -423,6 +430,10 @@ class TestWorkflowRunner:
                 print(f"\nTotal Workflow Time: {workflow_time:.2f} seconds")
 
                 return failed == 0
+            elif self.args.execute_cpp:
+                print("Test execution step completed successfully.")
+            elif self.args.build:
+                print("Test build step completed successfully.")
             else:
                 print("Test execution step skipped.")
 
@@ -431,7 +442,6 @@ class TestWorkflowRunner:
         return True
 
 def main() -> None:
-    setup_logging()
     parser = argparse.ArgumentParser(
         description='Run the complete test workflow using a feature input file and static input_dirs directory',
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -456,16 +466,17 @@ def main() -> None:
     parser.add_argument('--output_dir', default='test_results', help='Output directory for all artifacts')
     parser.add_argument('--test_plan', help='Path to existing test plan (optional)')
     parser.add_argument('--feature_input_file', help='Path to feature input JSON file containing name and description fields')
-    parser.add_argument('--verbose', action='store_true', help='Enable verbose output')
+    parser.add_argument("--verbose",action="store_true",help="Enable info-level logging instead of error-only.",)
     parser.add_argument('--code_dir', default='./code', help='Path to the code directory for RAG.')
     parser.add_argument('--remove_index_db', action='store_true', help='deletes the already created index db for RAG')
     parser.add_argument('--add_context_dir', help='provide all files as context to the pipeline, and the index db will not be used')
     parser.add_argument("--build", action="store_true", help="Enable build mode. Build the generated code file using user provided command.")
     parser.add_argument("--build_dir", help="build dir path")
     parser.add_argument("--build_cmd", help="Build command that will be used by agent to build the generated code file.")
-    parser.add_argument("--execute",action="store_true", help="Enable execute mode. Executes the generated binary file using user provided arguments if any.")
+    parser.add_argument("--execute_cpp",action="store_true", help="Enable execute mode. Executes the generated binary file using user provided arguments if any.")
     parser.add_argument("--execute_dir", help="execute dir path: directory path for execution")
     parser.add_argument("--execute_args", nargs=argparse.REMAINDER, default=[], help="Arguments to be added for execution. ex: ./filename --device gaudi2")
+    parser.add_argument('--execute_python',action='store_true',help='Execute generated tests (default: False)')
 
     # Step control arguments
     step_group = parser.add_mutually_exclusive_group()
@@ -475,20 +486,21 @@ def main() -> None:
                            help='Only run test automation, skip test plan generation')
 
     # Test execution control
-    parser.add_argument('--execute_tests', type=lambda x: x.lower() in ('true', '1', 'yes'), default=True,
-                        help='Execute generated tests (default: True). Set it to false to only generate tests without execution.')
 
     parser.add_argument('--prompt_path', type=str, required=True,
                         help='path to the system prompts directory to use for the test generation workflow.')
     args = parser.parse_args()
 
+    log_level = logging.INFO if args.verbose else logging.WARNING
+    setup_logging(log_level,project_namespace="VCA")
+
     if args.build:
         if not args.build_dir or not args.build_cmd:
             parser.error("--build requires --build_dir and --build_cmd")
 
-    if args.execute:
+    if args.execute_cpp:
         if not args.execute_dir or not args.build:
-            parser.error("--execute requires building using --build and also requires execute directrory in --execute_dir")
+            parser.error("--execute_cpp requires building using --build and also requires execute directrory in --execute_dir")
     try:
         # Dynamically import the module based on the prompt
         module_path = args.prompt_path.replace("/", ".")
@@ -513,9 +525,13 @@ def main() -> None:
         print("Mode: Test automation only")
     else:
         # Default mode: generate plan (if needed) + test automation
-        # The execute_tests flag will control whether tests are actually executed
-        if args.execute_tests:
+        # The execute_python flag will control whether tests are actually executed
+        if args.execute_python:
             print("Mode: Complete workflow (generate plan + test automation + execution)")
+        elif args.build:
+            print("Mode: Build cpp executables(generate plan + test automation + build)")
+        elif args.execute_cpp:
+            print("Mode: execute cpp after building cpp executables(generate plan + test automation + build + execute)")
         else:
             print("Mode: Generate tests only (skip execution)")
 
@@ -536,7 +552,7 @@ def main() -> None:
         test_coordinator_prompt=test_coordinator_prompt.TEST_COORDINATOR_AGENT_SYSTEM_PROMPT
     )
 
-    success = runner.run(execute_tests=args.execute_tests)
+    success = runner.run()
     sys.exit(0 if success else 1)
 
 if __name__ == '__main__':

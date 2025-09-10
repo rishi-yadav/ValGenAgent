@@ -2,10 +2,11 @@ import os
 import subprocess
 from datetime import datetime
 from utils.execute import ExeRunner  
-from utils.logging_config import get_logger
 import autogen
+import logging
 
-logging=get_logger()
+logging = logging.getLogger("VCA") 
+
 
 class ExeBuilder:
     """
@@ -74,7 +75,8 @@ class ExeBuilder:
             if build_proc.returncode != 0:
                 msgs.append(f"Build failed with code {build_proc.returncode}")
                 self.logger.log("TestBuildAndExecuteProxy", "Build failed, summarizing build logs")
-                summary = self.summarize_log(build_proc.stdout, "build log")
+                logs=build_proc.stderr+build_proc.stdout
+                summary = self.summarize_log(logs, "build log")
                 msgs.append("Build Log Summary:\n" + summary)
                 return False, msgs
             else:
