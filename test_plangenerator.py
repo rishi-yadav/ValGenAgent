@@ -11,6 +11,10 @@ from dotenv import load_dotenv
 import openai
 from openai import OpenAI
 from prompts.collective.test_plan_generation_system_prompt import TEST_PLAN_SYSTEM_PROMPT
+import logging
+
+logging = logging.getLogger("VGA") 
+
 
 # Load environment variables
 load_dotenv()
@@ -34,7 +38,7 @@ def generate_test_plan(args, api_key: Optional[str] = None, feature_info: Option
     try:
         openai.api_key = api_key or os.getenv("OPENAI_API_KEY")
         if not openai.api_key:
-            print("Error: OpenAI API key not found. Provide it as an argument or set the OPENAI_API_KEY environment variable.")
+            logging.error("OpenAI API key not found. Provide it as an argument or set the OPENAI_API_KEY environment variable.")
             return False, {}, ""
 
         # Use Intel's internal API if needed, otherwise use standard OpenAI endpoint
@@ -45,7 +49,7 @@ def generate_test_plan(args, api_key: Optional[str] = None, feature_info: Option
         if feature_info:
             feature_info_str = json.dumps(feature_info, indent=2)
             base_prompt += f"\n\nConsider the feature information while generating the test plan:\n {feature_info_str}"
-            print(f"Generating test plan for feature: {feature_info['name']}")
+            logging.info(f"Generating test plan for feature: {feature_info['name']}")
 
         try:
             response = client.chat.completions.create(
@@ -64,20 +68,20 @@ def generate_test_plan(args, api_key: Optional[str] = None, feature_info: Option
             try:
                 test_plan = json.loads(response_text)
             except json.JSONDecodeError:
-                print(f"Error generating test plan in json format: {str(e)}")
+                logging.error(f"Error generating test plan in json format: {str(e)}")
                 return False, {}, ""
 
             if args.verbose:
-                print("Successfully generated test plan")
+                logging.info("Successfully generated test plan")
 
             return True, test_plan, response_text
 
         except Exception as e:
-            print(f"Error during API call or JSON parsing: {str(e)}")
+            logging.error(f"Error during API call or JSON parsing: {str(e)}")
             return False, {}, ""
 
     except Exception as e:
-        print(f"Error generating test plan: {str(e)}")
+        logging.error(f"Error generating test plan: {str(e)}")
         return False, {}, ""
 
 def create_test_plan_document(test_plan: Dict[str, Any], output_file: str, feature_info) -> bool:
@@ -178,7 +182,7 @@ def create_test_plan_document(test_plan: Dict[str, Any], output_file: str, featu
         return True
 
     except Exception as e:
-        print(f"Error creating Word document: {e}")
+        logging.error(f"Error creating Word document: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -204,7 +208,7 @@ def generate_test_plan_files(args, output_file: str, json_file: str, feature_inf
                 with open(feature_info_file, 'r') as f:
                     feature_info = json.load(f)
             except Exception as e:
-                print(f"Error loading feature info file: {e}")
+                logging.error(f"Error loading feature info file: {e}")
                 return False
 
         # Generate test plan
@@ -214,7 +218,7 @@ def generate_test_plan_files(args, output_file: str, json_file: str, feature_inf
         )
 
         if not success:
-            print("Failed to generate test plan")
+            logging.error("Failed to generate test plan")
             return False
 
         # Save test plan as JSON
@@ -222,22 +226,22 @@ def generate_test_plan_files(args, output_file: str, json_file: str, feature_inf
             with open(json_file, 'w') as f:
                 json.dump(test_plan, f, indent=2)
         except Exception as e:
-            print(f"Error saving JSON file: {e}")
+            logging.error(f"Error saving JSON file: {e}")
             return False
 
         # Create Word document
         if not create_test_plan_document(test_plan, output_file, feature_info):
-            print("Failed to create Word document")
+            logging.error("Failed to create Word document")
             return False
 
         if args.verbose:
-            print(f"Test plan saved to: {output_file}")
-            print(f"JSON test plan saved to: {json_file}")
+            logging.info(f"Test plan saved to: {output_file}")
+            logging.info(f"JSON test plan saved to: {json_file}")
 
         return True
 
     except Exception as e:
-        print(f"Error generating test plan files: {e}")
+        logging.error(f"Error generating test plan files: {e}")
         import traceback
-        traceback.print_exc()
+        traceback.logging.info_exc()
         return False

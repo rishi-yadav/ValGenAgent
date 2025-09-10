@@ -5,7 +5,7 @@ from utils.execute import ExeRunner
 import autogen
 import logging
 
-logging = logging.getLogger("VCA") 
+logging = logging.getLogger("VGA") 
 
 
 class ExeBuilder:
@@ -14,14 +14,14 @@ class ExeBuilder:
         It saves the generated source file, compiles it using the specified build command, and, if errors occur, summarizes the build log to highlight issues before retrying.  
         If the build succeeds, it reports success; otherwise, it provides detailed error insights.
     """
-    def __init__(self, code, filepath, build_dir, log_dir, summarizer_agent, build_cmd, logger):
+    def __init__(self, code, filepath, build_dir, log_dir, summarizer_agent, build_cmd):
         self.code = code
         self.filepath = filepath
         self.build_dir = build_dir
         self.log_dir = log_dir
         self.summarizer_agent = summarizer_agent
         self.build_cmd = build_cmd
-        self.logger = logger
+
 
     def save_file(self) -> str:
         """save file with new code."""
@@ -42,7 +42,7 @@ class ExeBuilder:
         logging.debug("Build started, waiting for output...")
         try:
             msgs.append(f"Running build: {self.build_cmd} in {self.build_dir}")
-            self.logger.log("TestBuildAndExecuteProxy", f"Running build: {self.build_cmd} in {self.build_dir}")
+            logging.info(f"[TestBuildAndExecuteProxy] Running build: {self.build_cmd} in {self.build_dir}")
 
 
             build_proc = subprocess.run(
@@ -70,18 +70,18 @@ class ExeBuilder:
                 f.write(build_proc.stdout)
                 f.write(build_proc.stderr)
 
-            self.logger.log("TestBuildAndExecuteProxy", f"Please refer to the full logs here[ Full build log saved at: {log_file} ]")
+            logging.info(f"[TestBuildAndExecuteProxy] Please refer to the full logs here[ Full build log saved at: {log_file} ]")
 
             if build_proc.returncode != 0:
                 msgs.append(f"Build failed with code {build_proc.returncode}")
-                self.logger.log("TestBuildAndExecuteProxy", "Build failed, summarizing build logs")
+                logging.info("[TestBuildAndExecuteProxy] Build failed, summarizing build logs")
                 logs=build_proc.stderr+build_proc.stdout
                 summary = self.summarize_log(logs, "build log")
                 msgs.append("Build Log Summary:\n" + summary)
                 return False, msgs
             else:
                 msgs.append("Build succeeded")
-                self.logger.log("TestBuildAndExecuteProxy", "Build is successful")
+                logging.info("TestBuildAndExecuteProxy Build is successful")
                 return True, msgs
 
         except Exception as e:
@@ -102,7 +102,7 @@ class ExeBuilder:
             return f"Failed to summarize {context}: {e}"
 
 
-def save_build_run(code: str, filename: str, directory: str, build: bool, build_cmd: str, build_dir: str, execute: bool, execute_dir: str, execute_args: list, logger, llm_config=None) -> str:
+def save_build_run(code: str, filename: str, directory: str, build: bool, build_cmd: str, build_dir: str, execute: bool, execute_dir: str, execute_args: list, llm_config=None) -> str:
     """
     Save the test file, optionally build it, and optionally run executables.
     """
@@ -119,11 +119,10 @@ def save_build_run(code: str, filename: str, directory: str, build: bool, build_
         log_dir=os.path.join(build_dir, "logs"),
         summarizer_agent=None,  # will set below
         build_cmd=build_cmd,
-        logger=logger,
     )
 
     save_file_logs = build_runner.save_file()
-    logger.log("TestBuildAndExecuteProxy", f"save_file logs: {save_file_logs}")
+    logging.info(f"[TestBuildAndExecuteProxy] save_file logs: {save_file_logs}")
     msgs.append(save_file_logs)
 
     # Step 2: Init summarizer agent
@@ -148,13 +147,12 @@ def save_build_run(code: str, filename: str, directory: str, build: bool, build_
     msgs.extend(build_msgs)
 
     if success:
-        logger.log("TestBuildAndExecuteProxy", "Build succeeded")
+        logging.info("[TestBuildAndExecuteProxy] Build succeeded")
         if execute:
-            logger.log("TestBuildAndExecuteProxy", "Proceeding with execution")
+            logging.info("[TestBuildAndExecuteProxy] Proceeding with execution")
             exe_runner = ExeRunner(
                 exe_dir=execute_dir,
                 log_dir=os.path.join(execute_dir, "logs"),
-                logger=logger,
             )
             executables = exe_runner.find_executables()
             if not executables:
@@ -164,6 +162,6 @@ def save_build_run(code: str, filename: str, directory: str, build: bool, build_
                 exe_msgs = exe_runner.run_executables(execute_args)
                 msgs.extend(exe_msgs)
     else:
-        logger.log("TestBuildAndExecuteProxy", "Build failed")
+        logging.info("[TestBuildAndExecuteProxy] Build failed")
 
     return "\n".join(msgs)

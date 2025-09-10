@@ -2,12 +2,16 @@ from typing import List, Dict, Any, Optional, Tuple
 import os
 import json
 from docx import Document
+import re
+import logging
+
+logging = logging.getLogger("VGA") 
+
 
 
 
 class FileIO:
-    def __init__ (self, logger, output_dir):
-        self.logger=logger
+    def __init__ (self, output_dir):
         self.output_dir=output_dir
         
     def _validate_all_files_generated(self, expected_files: List[str], successful_files: List[str], failed_files: List[str]) -> bool:
@@ -29,34 +33,34 @@ class FileIO:
             else:
                 missing_files = expected_files.copy()
         except Exception as e:
-            self.logger.log("Orchestrator", f"Error checking output directory: {e}")
+            logging.error(f"[Orchestrator]- Error checking output directory: {e}")
             missing_files = expected_files.copy()
 
         # Print detailed file generation report
-        self.logger.log("Orchestrator", "===== FILE GENERATION REPORT ======")
-        self.logger.log("Orchestrator", f"Expected files: {len(expected_files)}")
-        self.logger.log("Orchestrator", f"Successfully processed: {len(successful_files)}")
-        self.logger.log("Orchestrator", f"Actually generated: {len(actually_generated_files)}")
+        logging.info("[Orchestrator]- ===== FILE GENERATION REPORT ======")
+        logging.info(f"[Orchestrator]- Expected files: {len(expected_files)}")
+        logging.info(f"[Orchestrator]- Successfully processed: {len(successful_files)}")
+        logging.info(f"[Orchestrator]- Actually generated: {len(actually_generated_files)}")
 
         if actually_generated_files:
-            self.logger.log("Orchestrator", f"Generated files: {actually_generated_files}")
+            logging.info(f"[Orchestrator]- Generated files: {actually_generated_files}")
 
         if missing_files:
-            self.logger.log("Orchestrator", f"Missing files: {missing_files}")
+            logging.info(f"[Orchestrator]- Missing files: {missing_files}")
 
         if failed_files:
-            self.logger.log("Orchestrator", f"Failed to process: {failed_files}")
+            logging.error(f"[Orchestrator]- Failed to process: {failed_files}")
 
         # Determine overall success
         all_files_generated = len(missing_files) == 0 and len(actually_generated_files) == len(expected_files)
 
         if all_files_generated:
-            self.logger.log("Orchestrator", "SUCCESS: All expected files were generated successfully!")
+            logging.info("[Orchestrator]- SUCCESS: All expected files were generated successfully!")
         else:
-            self.logger.log("Orchestrator", f"PARTIAL SUCCESS: Only {len(actually_generated_files)}/{len(expected_files)} files were generated")
-            self.logger.log("Orchestrator", "This is considered a failure as all files must be generated")
+            logging.warning(f"[Orchestrator]- PARTIAL SUCCESS: Only {len(actually_generated_files)}/{len(expected_files)} files were generated")
+            logging.warning("[Orchestrator]- This is considered a failure as all files must be generated")
 
-        self.logger.log("Orchestrator", "===== END REPORT =====")
+        logging.info("[Orchestrator]- ===== END REPORT =====")
 
         return all_files_generated
 
@@ -103,25 +107,25 @@ class FileIO:
                         has_test_content = any(indicator in content for indicator in indicators)
 
                         if has_test_content:
-                            self.logger.log("Orchestrator", f"File verified with test content: {expected_file} ({file_size} bytes)")
+                            logging.info(f"[Orchestrator]- File verified with test content: {expected_file} ({file_size} bytes)")
                             return True
                         else:
-                            self.logger.log("Orchestrator", f"File exists but lacks test content: {expected_file}")
+                            logging.error(f"[Orchestrator]- File exists but lacks test content: {expected_file}")
                             return False
 
                     except Exception as read_error:
-                        self.logger.log("Orchestrator", f"File exists but couldn't read content: {expected_file} - {read_error}")
+                        logging.error(f"[Orchestrator]- File exists but couldn't read content: {expected_file} - {read_error}")
                         # Still consider it valid if file exists and has size
                         return True
                 else:
-                    self.logger.log("Orchestrator", f"File exists but is empty: {expected_file}")
+                    logging.warning(f"[Orchestrator]- File exists but is empty: {expected_file}")
                     return False
             else:
-                self.logger.log("Orchestrator", f"File not found: {expected_file}")
+                logging.error(f"[Orchestrator]- File not found: {expected_file}")
                 return False
 
         except Exception as e:
-            self.logger.log("Orchestrator", f"Error verifying file {expected_file}: {e}")
+            logging.error(f"[Orchestrator]- Error verifying file {expected_file}: {e}")
             return False
 
 
@@ -144,7 +148,7 @@ class TestPlanParser:
             else:
                 return self._extract_from_docx()
         except Exception as e:
-            print(f"Error extracting test cases: {e}")
+            logging.error(f"Error extracting test cases: {e}")
             return False, [], []
 
     def _extract_from_json(self) -> Tuple[bool, List[Dict[str, Any]], List[str]]:
@@ -227,7 +231,7 @@ class TestPlanParser:
             return True, test_cases, list(implementation_files)
 
         except Exception as e:
-            print(f"Error reading JSON test plan: {e}")
+            logging.error(f"Error reading JSON test plan: {e}")
             import traceback
             traceback.print_exc()
             return False, [], []
@@ -257,7 +261,7 @@ class TestPlanParser:
                 test_cases.append(current_test_case)
             return True, test_cases, list(implementation_files)
         except Exception as e:
-            print(f"Error extracting from DOCX: {e}")
+            logging.error(f"Error extracting from DOCX: {e}")
             return False, [], []
 
     def _init_test_case(self, text: str) -> Dict[str, Any]:

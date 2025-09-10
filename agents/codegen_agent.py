@@ -6,6 +6,9 @@ from dataclasses import dataclass, field
 from dotenv import load_dotenv
 import autogen
 from autogen.coding import LocalCommandLineCodeExecutor
+import logging
+
+logging = logging.getLogger("VGA") 
 
 # Add the parent directory to sys.path to enable imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -32,9 +35,10 @@ try:
     from vector_index.generate_vector_db import KnowledgeBase
     VECTOR_DB_AVAILABLE = True
 except ImportError as e:
-    print(f"Warning: Vector database not available due to missing dependencies: {e}")
+    logging.warning(f"Vector database not available due to missing dependencies: {e}")
     VECTOR_DB_AVAILABLE = False
     KnowledgeBase = None
+
 
 # Load environment variables
 load_dotenv()
@@ -67,17 +71,6 @@ class TestCase:
     implementation_file: Optional[str] = None
     data_types: List[str] = field(default_factory=list)
 
-# --- Multi-Agent System ---
-
-class MessageLogger:
-    def __init__(self):
-        self.messages = []
-    def log(self, sender, message):
-        print(f"[{sender}] {message}")
-        self.messages.append((sender, message))
-    def get_log(self):
-        return self.messages
-
 # Agent 3: Smart Test Execution Agent
 class TestRunnerUserProxy(autogen.UserProxyAgent):
     def __init__(self, logger, output_dir="generated_tests"):
@@ -93,8 +86,6 @@ class TestRunnerUserProxy(autogen.UserProxyAgent):
             max_consecutive_auto_reply=50,
             code_execution_config={"executor": self.executor},
         )
-
-        self.logger = logger
         self.output_dir = output_dir
 
 # Function to save code to a file.
@@ -112,10 +103,9 @@ def save_code_to_file(code: str, filename: str, directory: str) -> str:
 class ContextManagedGroupChat(autogen.GroupChat):
     """GroupChat with automatic context management"""
 
-    def __init__(self, agents, messages, max_round, max_context_messages=25, logger=None):
+    def __init__(self, agents, messages, max_round, max_context_messages=25):
         super().__init__(agents=agents, messages=messages, max_round=max_round)
         self.max_context_messages = max_context_messages
-        self.logger = logger
 
     def append(self, message, speaker):
         """Override append to manage context automatically"""
@@ -124,8 +114,7 @@ class ContextManagedGroupChat(autogen.GroupChat):
 
         # Trigger context management when approaching limit
         if len(self.messages) > self.max_context_messages * 0.9:
-            if self.logger:
-                self.logger.log("GroupChat", f"Auto-managing context at {len(self.messages)} messages")
+            logging.info(f"[GroupChat]- Auto-managing context at {len(self.messages)} messages")
             self._auto_manage_context()
 
     def _auto_manage_context(self):
@@ -170,8 +159,7 @@ class ContextManagedGroupChat(autogen.GroupChat):
             managed_messages = [managed_messages[0]] + managed_messages[-(self.max_context_messages-1):]
 
         self.messages = managed_messages
-        if self.logger:
-            self.logger.log("GroupChat", f"Context auto-managed: reduced to {len(self.messages)} messages")
+        logging.info(f"[GroupChat]- Context auto-managed: reduced to {len(self.messages)} messages")
 
 class MultiAgentTestOrchestrator:
     def __init__(self, args, output_dir: str,
@@ -190,7 +178,6 @@ class MultiAgentTestOrchestrator:
         self.output_dir = output_dir
         self.max_retries = max_retries
         self.max_context_messages = max_context_messages
-        self.logger = MessageLogger()
         self.kb = None # Knowledge base instance if available
         self.execute_python = args.execute_python
         self.code_agent_prompt = code_agent_prompt
@@ -217,7 +204,6 @@ class MultiAgentTestOrchestrator:
         # Create a runner agent to execute tests
         if self.execute_python:
             # Full execution capability when tests should be executed
-            print('i am here and its true')
             self.runner_agent = autogen.UserProxyAgent(
                 name="TestExecutionProxy",
                 human_input_mode="NEVER",
@@ -239,7 +225,6 @@ class MultiAgentTestOrchestrator:
                     execute=self.execute_cpp,
                     execute_dir=self.execute_dir,
                     execute_args=self.execute_args,
-                    logger=self.logger,
                     llm_config=llm_config
                 )
 
@@ -286,7 +271,6 @@ class MultiAgentTestOrchestrator:
             messages=[],
             max_round=50,  # Allow enough rounds for iterations
             max_context_messages=self.max_context_messages,
-            logger=self.logger
         )
         # GroupChat manager with custom speaker selection logic
         self.manager = autogen.GroupChatManager(
@@ -311,28 +295,28 @@ class MultiAgentTestOrchestrator:
             urls=URLS_FILE
         )
         if not kb_success:
-            self.logger.log("Orchestrator", "Warning: Knowledge base initialization failed, proceeding without it")
+            logging.warning("[Orchestrator]- Knowledge base initialization failed, proceeding without it")
 
-        self.FileIO=FileIO(self.logger,self.output_dir)
+        self.FileIO=FileIO(self.output_dir)
 
     def orchestrate_test_generation(self, test_plan_path: str):
         """Main orchestration method using GroupChat for natural agent communication"""
-        self.logger.log("Orchestrator", f"Starting multi-agent test generation from {test_plan_path}")
+        logging.info(f"[Orchestrator]- Starting multi-agent test generation from {test_plan_path}")
 
         # Parse test plan
         parser = TestPlanParser(test_plan_path)
         success, test_cases, implementation_files = parser.extract_test_cases()
 
         if not success:
-            self.logger.log("Orchestrator", "ERROR: Failed to parse test plan")
+            logging.error("[Orchestrator]- Failed to parse test plan")
             return False
 
         if not test_cases:
-            self.logger.log("Orchestrator", "ERROR: No test cases found in the test plan")
+            logging.error("[Orchestrator]- No test cases found in the test plan")
             return False
 
-        self.logger.log("Orchestrator", f"Found {len(test_cases)} test cases across {len(implementation_files)} files")
-        self.logger.log("Orchestrator", f"Expected implementation files: {implementation_files}")
+        logging.info(f"[Orchestrator]- Found {len(test_cases)} test cases across {len(implementation_files)} files")
+        logging.info(f"[Orchestrator]- Expected implementation files: {implementation_files}")
 
         # Process each implementation file using GroupChat
         successful_files = []
@@ -349,11 +333,11 @@ class MultiAgentTestOrchestrator:
 
         # If execute_python is False, skip the execution step but still validate file generation
         if not self.execute_python and not self.execute_cpp:
-            self.logger.log("Orchestrator", "Skipping test execution as per configuration.")
+            logging.info("[Orchestrator]- Skipping test execution as per configuration.")
             return all_files_generated
 
         # Summary
-        self.logger.log("Orchestrator", f"Successfully generated tests for {len(successful_files)}/{len(implementation_files)} files")
+        logging.info(f"[Orchestrator]- Successfully generated tests for {len(successful_files)}/{len(implementation_files)} files")
         return all_files_generated
 
     def _process_implementation_file_with_groupchat(self, impl_file: str, all_test_cases: List[Dict]) -> bool:
@@ -361,10 +345,10 @@ class MultiAgentTestOrchestrator:
         # Filter relevant test cases
         relevant_tests = [tc for tc in all_test_cases if tc.get('implementation_file') == impl_file]
         if not relevant_tests:
-            self.logger.log("Orchestrator", f"WARNING: No relevant tests found for {impl_file}")
+            logging.warning(f"[Orchestrator]-  No relevant tests found for {impl_file}")
             return False
 
-        self.logger.log("Orchestrator", f"Processing {impl_file} with {len(relevant_tests)} test cases using GroupChat")
+        logging.info(f"[Orchestrator]- Processing {impl_file} with {len(relevant_tests)} test cases using GroupChat")
 
         # Format test cases for the group chat
         test_cases_text = self._format_test_cases_for_chat(relevant_tests)
@@ -387,7 +371,7 @@ class MultiAgentTestOrchestrator:
             """
         try:
             # Start the group chat
-            self.logger.log("Orchestrator", f"Starting GroupChat for {impl_file}")
+            logging.info(f"[Orchestrator]- Starting GroupChat for {impl_file}")
 
             # Initialize a fresh group chat for this file
             self.group_chat.messages = []  # Clear previous messages
@@ -397,7 +381,7 @@ class MultiAgentTestOrchestrator:
             context_input=f"Test is {test_categories_string}"
             context = ""
             if self.args.add_context_dir is not None:
-                self.logger.log("Info",f"Using the files at the directory {self.args.add_context_dir}")
+                logging.info(f"[Orchestrator]- Using the files at the directory {self.args.add_context_dir}")
                 combined_content = ""
                 for filename in os.listdir(self.args.add_context_dir):
                     file_path = os.path.join(self.args.add_context_dir, filename)
@@ -411,13 +395,13 @@ class MultiAgentTestOrchestrator:
                 try:
                     context = self.kb.retrive_document_chunks(context_input)
                     if "[Error]" in context or not context:
-                        self.logger.log("Orchestrator", f"WARNING: Failed to retrieve doc chunks for {impl_file}, proceeding without context")
+                        logging.warning(f"[Orchestrator]-  Failed to retrieve doc chunks for {impl_file}, proceeding without context")
                         context = ""
                 except Exception as e:
-                    self.logger.log("Orchestrator", f"WARNING: Error retrieving doc chunks: {e}, proceeding without context")
+                    logging.warning(f"[Orchestrator]- retrieving doc chunks: {e}, proceeding without context")
                     context = ""
             else:
-                self.logger.log("Orchestrator", f"WARNING: Knowledge base not available, proceeding without context")
+                logging.warning(f"[Orchestrator]- Knowledge base not available, proceeding without context")
 
             if context:
                 prompt_with_context = f"Based on the following code context:\n\n{context}\n\n {initial_message}"
@@ -444,36 +428,36 @@ class MultiAgentTestOrchestrator:
             file_actually_created = self.FileIO._verify_file_created(impl_file)
 
             # Debug logging
-            self.logger.log("Orchestrator", f"SUCCESS DETECTION: Found {len(self.group_chat.messages)} messages in chat")
-            self.logger.log("Orchestrator", f"Chat success detected: {success}")
-            self.logger.log("Orchestrator", f"File actually created: {file_actually_created}")
+            logging.info(f"[Orchestrator]- SUCCESS DETECTION: Found {len(self.group_chat.messages)} messages in chat")
+            logging.info(f"[Orchestrator]- Chat success detected: {success}")
+            logging.info(f"[Orchestrator]- File actually created: {file_actually_created}")
 
             for i, msg in enumerate(self.group_chat.messages[-3:]):  # Log last 3 messages for debugging
                 content_preview = str(msg.get('content', ''))[:200]  # First 200 chars
-                self.logger.log("Orchestrator", f"Message {i}: {content_preview}...")
+                logging.info(f"[Orchestrator]- Message {i}: {content_preview}...")
 
             # Final success is both chat success AND file creation
             final_success = success and file_actually_created
 
             if final_success:
-                self.logger.log("Orchestrator", f"SUCCESS: GroupChat completed and file created for {impl_file}")
+                logging.info(f"[Orchestrator]- SUCCESS: GroupChat completed and file created for {impl_file}")
                 # Save artifacts from the group chat
                 artifact_saved = self._save_artifacts_from_chat(impl_file)
                 if not artifact_saved:
-                    self.logger.log("Orchestrator", f"Warning: Failed to save artifacts for {impl_file}")
+                    logging.warning(f"[Orchestrator]- Failed to save artifacts for {impl_file}")
 
                 return True
             else:
                 if success and not file_actually_created:
-                    self.logger.log("Orchestrator", f"PARTIAL FAILURE: GroupChat succeeded but file {impl_file} was not created")
+                    logging.warning(f"[Orchestrator]- PARTIAL FAILURE: GroupChat succeeded but file {impl_file} was not created")
                 elif not success and file_actually_created:
-                    self.logger.log("Orchestrator", f"PARTIAL FAILURE: File {impl_file} was created but chat did not complete successfully")
+                    logging.warning(f"[Orchestrator]- PARTIAL FAILURE: File {impl_file} was created but chat did not complete successfully")
                 else:
-                    self.logger.log("Orchestrator", f"COMPLETE FAILURE: Neither chat success nor file creation for {impl_file}")
+                    logging.error(f"[Orchestrator]- COMPLETE FAILURE: Neither chat success nor file creation for {impl_file}")
                 return False
 
         except Exception as e:
-            self.logger.log("Orchestrator", f"ERROR: GroupChat failed for {impl_file}: {str(e)}")
+            logging.error(f"[Orchestrator]- ERROR: GroupChat failed for {impl_file}: {str(e)}")
             return False
 
 
@@ -493,7 +477,7 @@ class MultiAgentTestOrchestrator:
     def _extract_success_from_chat(self, language='py') -> bool:
         """Extract success status from the group chat messages and logger for a specific language"""
         if language not in LANGUAGE_PATTERNS:
-            self.logger.log("Orchestrator", f"Unsupported language: {language}")
+            logging.error(f"[Orchestrator]- Unsupported language: {language}")
             return False
 
         patterns = LANGUAGE_PATTERNS[language]
@@ -504,7 +488,7 @@ class MultiAgentTestOrchestrator:
             content = str(message.get('content', ''))
             for pattern in patterns['generation']:
                 if re.search(pattern, content, re.IGNORECASE):
-                    self.logger.log("Orchestrator", f"TEST GENERATION PATTERN MATCHED: '{pattern}' in GroupChat message")
+                    logging.info(f"[Orchestrator]- TEST GENERATION PATTERN MATCHED: '{pattern}' in GroupChat message")
                     return True
 
         # Check for file saving patterns if execute_python is False
@@ -513,7 +497,7 @@ class MultiAgentTestOrchestrator:
                 content = str(message.get('content', ''))
                 for pattern in patterns['file_saving']:
                     if re.search(pattern, content, re.IGNORECASE):
-                        self.logger.log("Orchestrator", f"FILE SAVING PATTERN MATCHED: '{pattern}' in GroupChat message")
+                        logging.info(f"[Orchestrator]- FILE SAVING PATTERN MATCHED: '{pattern}' in GroupChat message")
                         return True
 
         # Check for execution success patterns if execute_python is True
@@ -523,7 +507,7 @@ class MultiAgentTestOrchestrator:
                 for pattern in patterns['execution']:
                     if re.search(pattern, content, re.IGNORECASE):
                         if 'failed' not in content.lower() or 'passed' in content.lower():
-                            self.logger.log("Orchestrator", f"EXECUTION SUCCESS PATTERN MATCHED: '{pattern}' in GroupChat message")
+                            logging.info(f"[Orchestrator]- EXECUTION SUCCESS PATTERN MATCHED: '{pattern}' in GroupChat message")
                             return True
 
         # Check if any files exist in output directory
@@ -532,19 +516,19 @@ class MultiAgentTestOrchestrator:
                 files = []
                 files.extend([f for f in os.listdir(self.output_dir) if f.endswith(f'.{file_extension}')])
                 if files:
-                    self.logger.log("Orchestrator", f"SUCCESS: Found {len(files)} {language} files in output directory: {files}")
+                    logging.info(f"[Orchestrator]- SUCCESS: Found {len(files)} {language} files in output directory: {files}")
                     return True
         except Exception as e:
-            self.logger.log("Orchestrator", f"Error checking for {language} files: {e}")
+            logging.error(f"[Orchestrator]- checking for {language} files: {e}")
 
         # Fallback: check if any meaningful conversation happened
         meaningful_messages = [msg for msg in self.group_chat.messages
                                if len(str(msg.get('content', ''))) > 100]
         if len(meaningful_messages) >= 3:
-            self.logger.log("Orchestrator", f"SUCCESS: Meaningful conversation detected with {len(meaningful_messages)} substantial messages")
+            logging.info(f"[Orchestrator]- SUCCESS: Meaningful conversation detected with {len(meaningful_messages)} substantial messages")
             return True
 
-        self.logger.log("Orchestrator", "No success patterns found in chat messages")
+        logging.error("[Orchestrator]- No success patterns found in chat messages")
         return False
 
     def _save_artifacts_from_chat(self, impl_file: str) -> bool:
@@ -565,11 +549,11 @@ class MultiAgentTestOrchestrator:
                     f.write(f"{message.get('content', '')}\n")
                     f.write("-" * 50 + "\n")
 
-            self.logger.log("Orchestrator", f"Saved chat log for {impl_file}")
+            logging.info(f"[Orchestrator]- Saved chat log for {impl_file}")
             return True
 
         except Exception as e:
-            self.logger.log("Orchestrator", f"Error saving artifacts for {impl_file}: {e}")
+            logging.error(f"[Orchestrator]- saving artifacts for {impl_file}: {e}")
             return False
 
     def _manage_context_length(self):
@@ -577,7 +561,7 @@ class MultiAgentTestOrchestrator:
         if len(self.group_chat.messages) <= self.max_context_messages:
             return  # No management needed
 
-        self.logger.log("Orchestrator", f"Managing context: {len(self.group_chat.messages)} messages -> target: {self.max_context_messages}")
+        logging.info(f"[Orchestrator]- Managing context: {len(self.group_chat.messages)} messages -> target: {self.max_context_messages}")
 
         # Strategy: Keep initial prompt + important messages + recent messages
         if not self.group_chat.messages:
@@ -632,7 +616,7 @@ class MultiAgentTestOrchestrator:
 
         # Update the group chat messages
         self.group_chat.messages = managed_messages
-        self.logger.log("Orchestrator", f"Context managed: reduced to {len(self.group_chat.messages)} messages")
+        logging.info(f"[Orchestrator]- Context managed: reduced to {len(self.group_chat.messages)} messages")
 
     def build_knowledge_base(self, input_dirs, urls):
         """Build the knowledge base
@@ -649,10 +633,10 @@ class MultiAgentTestOrchestrator:
                 self.kb.build_index(input_dirs, urls)
                 return True
             except Exception as e:
-                print(f"Warning: Failed to build knowledge base: {e}")
+                logging.warning(f"Failed to build knowledge base: {e}")
                 return False
         else:
-            print("Warning: Cannot build knowledge base - dependencies not available")
+            logging.warning("Cannot build knowledge base - dependencies not available")
             return False
 
 def run_test_automation(args, test_plan_path: str,
@@ -678,21 +662,21 @@ def run_test_automation(args, test_plan_path: str,
     try:
         # Validate input file
         if not os.path.exists(test_plan_path):
-            print(f"ERROR: Test plan file '{test_plan_path}' not found")
+            logging.error(f"ERROR: Test plan file '{test_plan_path}' not found")
             return False
 
         if not test_plan_path.endswith(('.json', '.docx')):
-            print("ERROR: Test plan must be a JSON or DOCX file")
+            logging.error("ERROR: Test plan must be a JSON or DOCX file")
             return False
 
         if args.verbose:
-            print("Multi-Agent Test Automation System")
-            print("=" * 40)
-            print(f"Test Plan: {test_plan_path}")
-            print(f"Output Directory: {output_dir}")
-            print(f"Max Retries: {max_retries}")
-            print(f"Max Context Messages: {max_context}")
-            print("=" * 40)
+            logging.info("Multi-Agent Test Automation System")
+            logging.info("=" * 40)
+            logging.info(f"Test Plan: {test_plan_path}")
+            logging.info(f"Output Directory: {output_dir}")
+            logging.info(f"Max Retries: {max_retries}")
+            logging.info(f"Max Context Messages: {max_context}")
+            logging.info("=" * 40)
 
         # Initialize and run the multi-agent orchestrator
         orchestrator = MultiAgentTestOrchestrator(
@@ -709,28 +693,28 @@ def run_test_automation(args, test_plan_path: str,
 
         if success:
             if args.verbose:
-                print("\n" + "="*50)
-                print("COMPLETE SUCCESS: All expected test files generated!")
-                print(f"Generated tests are available in: {output_dir}")
-                print("="*50)
+                logging.info("\n" + "="*50)
+                logging.info("COMPLETE SUCCESS: All expected test files generated!")
+                logging.info(f"Generated tests are available in: {output_dir}")
+                logging.info("="*50)
             else:
-                print("\nSUCCESS: All expected test files generated successfully!")
+                logging.info("SUCCESS: All expected test files generated successfully!")
         else:
             if args.verbose:
-                print("\n" + "="*50)
-                print("FAILURE: Not all expected test files were generated!")
-                print("Check the logs above for details on which files failed.")
-                print("="*50)
+                logging.error("="*50)
+                logging.error("FAILURE: Not all expected test files were generated!")
+                logging.error("Check the logs above for details on which files failed.")
+                logging.error("="*50)
             else:
-                print("\nFAILURE: Test generation incomplete - not all files generated!")
+                logging.error("\nFAILURE: Test generation incomplete - not all files generated!")
 
         return success
 
     except KeyboardInterrupt:
-        print("\nProcess interrupted by user")
+        logging.error("Process interrupted by user")
         return False
     except Exception as e:
-        print(f"\nUnexpected error: {str(e)}")
+        logging.error(f"Unexpected error: {str(e)}")
         import traceback
         traceback.print_exc()
         return False

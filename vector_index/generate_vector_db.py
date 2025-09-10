@@ -18,6 +18,9 @@ from llama_index.readers.web import BeautifulSoupWebReader
 from llama_index.llms.openai_like import OpenAILike
 from llama_index.core.node_parser import CodeSplitter, HierarchicalNodeParser
 from llama_index.packs.code_hierarchy import CodeHierarchyNodeParser
+import logging
+
+logging = logging.getLogger("VGA") 
 
 class KnowledgeBase:
     """Knowledge base using LlamaIndex for document retrieval and querying"""
@@ -68,32 +71,32 @@ class KnowledgeBase:
             if not os.path.exists(code_dirs):
                 raise FileNotFoundError(f"inpur directory '{code_dirs}' does not exist.")
 
-            print(f"[Info]: Loading documents from {code_dirs}")
+            logging.info(f"Loading documents from {code_dirs}")
             reader = SimpleDirectoryReader(code_dirs, recursive=True)
             docs = reader.load_data(num_workers=8)
             all_documents.extend(docs)
-            print(f"[Info]: Loaded {len(docs)} documents from {code_dirs}")
+            logging.info(f"Loaded {len(docs)} documents from {code_dirs}")
 
             # Load URLs
             if urls:
-                print(f"[Info]: Loading {len(urls)} URLs")
+                logging.info(f"Loading {len(urls)} URLs")
                 url_loader = BeautifulSoupWebReader()
                 try:
                     url_docs = url_loader.load_data(urls=urls)
                     all_documents.extend(url_docs)
-                    print(f"[Info]: Loaded {len(url_docs)} URL documents")
+                    logging.info(f"Loaded {len(url_docs)} URL documents")
                 except Exception as e:
-                    print(f"[Warning]: Failed to load URLs: {e}")
+                    logging.warning(f"Failed to load URLs: {e}")
 
             if len(all_documents) == 0:
-                print("[Warning]: No documents to index")
+                logging.warning("No documents to index")
                 return
 
-            print(f"[Info]: Total documents loaded: {len(all_documents)}")
+            logging.info(f"Total documents loaded: {len(all_documents)}")
             return all_documents
 
         except Exception as e:
-            print(f"[Error]: Failed to load documents: {e}")
+            logging.error(f"Failed to load documents: {e}")
             import traceback
             traceback.print_exc()
             raise
@@ -145,7 +148,7 @@ class KnowledgeBase:
              if hasattr(node, "relationships"):
                  node.relationships.update({k: [] for k, v in node.relationships.items() if v is None})
 
-        print(f"[Info]: Parsed {len(nodes)} nodes from {len(docs)} documents")
+        logging.info(f"Parsed {len(nodes)} nodes from {len(docs)} documents")
         return nodes
 
     def create_vector_index_from_nodes(self, nodes, persist_dir=None):
@@ -153,7 +156,7 @@ class KnowledgeBase:
             # Check if index already exists
             if os.path.exists(persist_dir):
                 try:
-                    print("[Info]: Loading existing vector index...")
+                    logging.info("Loading existing vector index...")
                     storage_context = StorageContext.from_defaults(persist_dir=persist_dir)
                     self.index = load_index_from_storage(
                         storage_context,
@@ -162,8 +165,8 @@ class KnowledgeBase:
                     return
 
                 except Exception as e:
-                    print(f"[Warning]: Failed to load existing vector index: {e}")
-                    print("[Info]: Building vector index freshly ...")
+                    logging.warning(f"Failed to load existing vector index: {e}")
+                    logging.info("Building vector index freshly ...")
                     import shutil
                     shutil.rmtree(persist_dir, ignore_errors=True)
                     self.index = VectorStoreIndex(
@@ -171,21 +174,21 @@ class KnowledgeBase:
                         embed_model=self.embed_model,
                         show_progress=True
                     )
-                    print(f"[Info]: Saving freshly created vector index to {persist_dir}")
+                    logging.info(f"Saving freshly created vector index to {persist_dir}")
                     self.index.storage_context.persist(persist_dir=persist_dir)
                     return
 
             # Create index using simple storage
-            print("[Info]: Building vector index...")
+            logging.debug("Building vector index...")
             self.index = VectorStoreIndex(
                 nodes,
                 embed_model=self.embed_model,
                 show_progress=True
             )
-            print(f"[Info]: Saving vector index to {persist_dir}")
+            logging.info(f"Saving vector index to {persist_dir}")
             self.index.storage_context.persist(persist_dir=persist_dir)
         except Exception as e:
-            print(f"[Error]: Failed to build/load vector index: {e}")
+            logging.error(f"Failed to build/load vector index: {e}")
             import traceback
             traceback.print_exc()
             raise
@@ -201,7 +204,7 @@ class KnowledgeBase:
         except Exception as e:
             import traceback
             traceback.print_exc()
-            return f"[Error]: Query failed: {str(e)}"
+            return f"Query failed: {str(e)}"
 
     def retrive_document_chunks(self, query_str, top_k=5):
         """Retrieve documents based on a query"""
@@ -213,17 +216,17 @@ class KnowledgeBase:
             response = retriever.retrieve(query_str)
             return response
         except Exception as e:
-            print(f"[Error]: Retrieval failed: {e}")
+            logging.error(f"Retrieval failed: {e}")
             import traceback
             traceback.print_exc()
-            return f"[Error]: Retrieval failed: {str(e)}"
+            return f"Retrieval failed: {str(e)}"
 
     def build_index(self, input_dirs=None, public_urls_file=None):
         """Build the knowledge base index from code directories and URLs"""
         try:
             # Check if index already exists
             if os.path.exists(self.knowledge_index_dir):
-                print("[Info]: Loading existing index...")
+                logging.debug("Loading existing index...")
                 storage_context = StorageContext.from_defaults(persist_dir=self.knowledge_index_dir)
                 self.index = load_index_from_storage(
                     storage_context,
@@ -231,17 +234,17 @@ class KnowledgeBase:
                 )
 
                 # Create query engine
-                print("[Info]: Creating query engine from existing index...")
+                logging.debug("Creating query engine from existing index...")
                 self.query_engine = self.index.as_query_engine(llm=self.llm)
-                print("[Info]: Successfully loaded existing index")
+                logging.info("Successfully loaded existing index")
                 return
         except Exception as e:
-            print(f"[Error]: Failed to load existing vector index: {e}")
-            print(f"[Info]: Deleting existing index and rebuilding...")
+            logging.error(f"Failed to load existing vector index: {e}")
+            logging.info(f"Deleting existing index and rebuilding...")
             import shutil
             shutil.rmtree(self.knowledge_index_dir)
 
-        print("[Info]: Building new vector index...")
+        logging.debug("Building new vector index...")
 
         if not input_dirs and not public_urls_file:
             raise ValueError("No input directories or URLs provided to build index.")
@@ -260,7 +263,7 @@ class KnowledgeBase:
         # Load documents
         docs = self.load_documents(input_dirs, urls)
         if not docs:
-            print("[Warning]: No documents loaded. Cannot build index.")
+            logging.warning("No documents loaded. Cannot build index.")
             return
 
         # Parse documents into nodes
@@ -270,5 +273,5 @@ class KnowledgeBase:
         self.create_vector_index_from_nodes(nodes, persist_dir=self.knowledge_index_dir)
 
         # Create query engine
-        print("[Info]: Creating query engine...")
+        logging.info("Creating query engine...")
         self.query_engine = self.index.as_query_engine(llm=self.llm)

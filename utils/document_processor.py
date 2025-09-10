@@ -24,9 +24,9 @@ warnings.filterwarnings("ignore", message=".*_reorder_cache.*")
 warnings.filterwarnings("ignore", message=".*pad_token_id.*")
 warnings.filterwarnings("ignore", message=".*eos_token.*")
 warnings.filterwarnings("ignore", message=".*bos_token.*")
+import logging
 
 # Also suppress at the logging level
-import logging
 logging.getLogger("transformers").setLevel(logging.ERROR)
 logging.getLogger("torch").setLevel(logging.ERROR)
 
@@ -34,6 +34,9 @@ from llama_index.core import SimpleDirectoryReader
 from llama_index.readers.web import BeautifulSoupWebReader
 from openai import OpenAI
 from dotenv import load_dotenv
+import logging
+
+logging = logging.getLogger("VGA") 
 
 # Load environment variables
 load_dotenv()
@@ -72,7 +75,7 @@ class DocumentProcessor:
         if self.api_key:
             self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
         else:
-            print("Warning: No OpenAI API key provided. AI features will not be available.")
+            logging.warning("No OpenAI API key provided. AI features will not be available.")
             self.client = None
 
         # Initialize tokenizer for GPT-4o
@@ -97,17 +100,17 @@ class DocumentProcessor:
         except Exception as e:
             # Fallback: rough estimation (4 chars per token)
             if self.verbose:
-                print(f"Warning: Token counting failed, using estimation: {e}")
+                logging.warning(f"Token counting failed, using estimation: {e}")
             return len(text) // 4
 
     def load_documents_from_directory(self, docs_dir) -> List[DocumentInfo]:
         docs_path = Path(docs_dir) if isinstance(docs_dir, str) else docs_dir
 
         if not docs_path.exists():
-            print(f"Warning: Directory {docs_path} does not exist")
+            logging.warning(f"Directory {docs_path} does not exist")
             return []
 
-        print(f"Loading documents from: {docs_path}")
+        logging.debug(f"Loading documents from: {docs_path}")
         doc_infos = []
         total_tokens = 0
 
@@ -118,7 +121,7 @@ class DocumentProcessor:
                 all_files.append(file_path)
 
         if all_files:
-            print(f"Found {len(all_files)} files to process")
+            logging.info(f"Found {len(all_files)} files to process")
 
             for file_path in all_files:
                 try:
@@ -142,13 +145,13 @@ class DocumentProcessor:
                         total_tokens += token_count
 
                         if self.verbose:
-                            print(f"  {file_path.name}: {token_count:,} tokens")
+                            logging.info(f"{file_path.name}: {token_count:,} tokens")
                     else:
                         if self.verbose:
-                            print(f"  {file_path.name}: No content extracted")
+                            logging.info(f"{file_path.name}: No content extracted")
 
                 except Exception as e:
-                    print(f"  Failed to load {file_path.name}: {e}")
+                    logging.error(f"Failed to load {file_path.name}: {e}")
                     continue
 
         # Check for URLs file in parent directory
@@ -160,11 +163,11 @@ class DocumentProcessor:
             total_tokens += sum(doc.token_count for doc in url_docs)
 
         if not doc_infos:
-            print(f"No documents found in {docs_path}")
+            logging.info(f"No documents found in {docs_path}")
             return []
 
-        print(f"Successfully loaded {len(doc_infos)} documents")
-        print(f"Total content: {total_tokens:,} tokens")
+        logging.info(f"Successfully loaded {len(doc_infos)} documents")
+        logging.info(f"Total content: {total_tokens:,} tokens")
         return doc_infos
 
     def _load_with_simple_reader(self, file_path: Path) -> str:
@@ -173,28 +176,28 @@ class DocumentProcessor:
 
             if file_path.suffix.lower() in problematic_extensions:
                 if self.verbose:
-                    print(f"Skipping SimpleDirectoryReader for {file_path.name} (known to cause issues)")
+                    logging.info(f"Skipping SimpleDirectoryReader for {file_path.name} (known to cause issues)")
                 return ""
 
             if self.verbose:
-                print(f"Trying SimpleDirectoryReader for {file_path.name}")
+                logging.info(f"Trying SimpleDirectoryReader for {file_path.name}")
 
             reader = SimpleDirectoryReader(input_files=[str(file_path)])
             documents = reader.load_data()
 
             if documents and documents[0].text.strip():
                 if self.verbose:
-                    print(f"SimpleDirectoryReader succeeded for {file_path.name}")
+                    logging.info(f"SimpleDirectoryReader succeeded for {file_path.name}")
                 return documents[0].text.strip()
 
         except Exception as e:
             error_str = str(e).lower()
             if any(keyword in error_str for keyword in ['attention_mask', '_reorder_cache', 'transformers', 'gpt2']):
                 if self.verbose:
-                    print(f"    SimpleDirectoryReader failed for {file_path.name}: Transformer model issue")
+                    logging.error(f"SimpleDirectoryReader failed for {file_path.name}: Transformer model issue")
             else:
                 if self.verbose:
-                    print(f"    SimpleDirectoryReader failed for {file_path.name}: {e}")
+                    logging.error(f"SimpleDirectoryReader failed for {file_path.name}: {e}")
 
         return ""
 
@@ -207,7 +210,7 @@ class DocumentProcessor:
 
             if file_path.suffix.lower() in binary_extensions:
                 if self.verbose:
-                    print(f"    Skipping binary file: {file_path.name}")
+                    logging.info(f"Skipping binary file: {file_path.name}")
                 return ""
 
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -215,12 +218,12 @@ class DocumentProcessor:
 
             if content.strip():
                 if self.verbose:
-                    print(f"Loaded as UTF-8 text: {file_path.name}")
+                    logging.info(f"Loaded as UTF-8 text: {file_path.name}")
                 return content.strip()
 
         except Exception as e:
             if self.verbose:
-                print(f"UTF-8 fallback failed for {file_path.name}: {e}")
+                logging.error(f"UTF-8 fallback failed for {file_path.name}: {e}")
 
         return ""
 
@@ -229,7 +232,7 @@ class DocumentProcessor:
             from pptx import Presentation
 
             if self.verbose:
-                print(f"    Trying python-pptx for {pptx_file.name}")
+                logging.info(f"Trying python-pptx for {pptx_file.name}")
 
             prs = Presentation(str(pptx_file))
             text_content = []
@@ -246,15 +249,15 @@ class DocumentProcessor:
             result = "\n".join(text_content)
             if result.strip():
                 if self.verbose:
-                    print(f"Extracted PPTX content from {pptx_file.name}")
+                    logging.info(f"Extracted PPTX content from {pptx_file.name}")
                 return result.strip()
 
         except ImportError:
             if self.verbose:
-                print(f"python-pptx not available for {pptx_file.name}")
+                logging.error(f"python-pptx not available for {pptx_file.name}")
         except Exception as e:
             if self.verbose:
-                print(f"    PPTX extraction failed for {pptx_file.name}: {e}")
+                logging.error(f"PPTX extraction failed for {pptx_file.name}: {e}")
 
         return ""
 
@@ -262,7 +265,7 @@ class DocumentProcessor:
         """Load documents from URLs listed in a file."""
         if not urls_file.exists():
             if self.verbose:
-                print(f"URLs file not found: {urls_file}")
+                logging.error(f"URLs file not found: {urls_file}")
             return []
 
         try:
@@ -275,10 +278,10 @@ class DocumentProcessor:
 
             if not urls:
                 if self.verbose:
-                    print(f"No valid URLs found in {urls_file}")
+                    logging.info(f"No valid URLs found in {urls_file}")
                 return []
 
-            print(f"Loading {len(urls)} URLs from {urls_file.name}")
+            logging.info(f"Loading {len(urls)} URLs from {urls_file.name}")
 
             # Load URLs using BeautifulSoupWebReader
             url_loader = BeautifulSoupWebReader()
@@ -297,13 +300,13 @@ class DocumentProcessor:
                     doc_infos.append(doc_info)
 
                     if self.verbose:
-                        print(f"  {urls[i] if i < len(urls) else f'url_{i+1}'}: {token_count:,} tokens")
+                        logging.info(f"{urls[i] if i < len(urls) else f'url_{i+1}'}: {token_count:,} tokens")
 
-            print(f"Successfully loaded {len(doc_infos)} URL documents")
+            logging.info(f"Successfully loaded {len(doc_infos)} URL documents")
             return doc_infos
 
         except Exception as e:
-            print(f"Warning: Failed to load URLs from {urls_file}: {e}")
+            logging.warning(f"Failed to load URLs from {urls_file}: {e}")
             if self.verbose:
                 import traceback
                 traceback.print_exc()
@@ -315,15 +318,15 @@ class DocumentProcessor:
 
         total_tokens = sum(doc.token_count for doc in doc_infos)
 
-        print(f"Preparing content for processing:")
-        print(f"  Total tokens: {total_tokens:,}")
-        print(f"  Safe limit: {self.SAFE_CONTEXT_TOKENS:,}")
+        logging.info(f"Preparing content for processing:")
+        logging.info(f"Total tokens: {total_tokens:,}")
+        logging.info(f"Safe limit: {self.SAFE_CONTEXT_TOKENS:,}")
 
         if total_tokens <= self.SAFE_CONTEXT_TOKENS:
-            print("  Strategy: Using full document content")
+            logging.info("Strategy: Using full document content")
             return self._combine_full_documents(doc_infos)
         else:
-            print("  Strategy: Summarizing documents to fit token limits")
+            logging.info("Strategy: Summarizing documents to fit token limits")
             return self._summarize_documents(doc_infos)
 
     def _combine_full_documents(self, doc_infos: List[DocumentInfo]) -> str:
@@ -336,10 +339,10 @@ class DocumentProcessor:
 
     def _summarize_documents(self, doc_infos: List[DocumentInfo]) -> str:
         if not self.client:
-            print("Warning: No OpenAI client available for summarization. Using truncated content.")
+            logging.warning("No OpenAI client available for summarization. Using truncated content.")
             return self._truncate_documents(doc_infos)
 
-        print("  Summarizing documents using AI...")
+        logging.info("Summarizing documents using AI...")
         summarized_docs = []
 
         for doc_info in doc_infos:
@@ -351,7 +354,7 @@ class DocumentProcessor:
                     summarized_docs.append("")
 
             except Exception as e:
-                print(f"Warning: Failed to summarize {doc_info.file_name}: {e}")
+                logging.warning(f"Failed to summarize {doc_info.file_name}: {e}")
                 truncated = doc_info.content[:2000] + "..." if len(doc_info.content) > 2000 else doc_info.content
                 summarized_docs.append(f"=== {doc_info.file_name} (Truncated) ===")
                 summarized_docs.append(truncated)
@@ -393,11 +396,11 @@ class DocumentProcessor:
             return response.choices[0].message.content.strip()
 
         except Exception as e:
-            print(f"Error summarizing document {doc_info.file_name}: {e}")
+            logging.error(f"Error summarizing document {doc_info.file_name}: {e}")
             raise
 
     def _truncate_documents(self, doc_infos: List[DocumentInfo]) -> str:
-        print("  Using truncation fallback method")
+        logging.info("Using truncation fallback method")
         combined_content = []
         remaining_tokens = self.SAFE_CONTEXT_TOKENS
 
@@ -423,13 +426,13 @@ class DocumentProcessor:
 
     def create_feature_info_with_ai(self, content: str, input_dir_name: str) -> Dict[str, Any]:
         if not self.client:
-            print("Warning: No OpenAI client available. Creating basic feature info.")
+            logging.warning("No OpenAI client available. Creating basic feature info.")
             return {
                 "name": input_dir_name.replace('_', ' ').replace('-', ' ').title(),
                 "description": content[:5000] + "..." if len(content) > 5000 else content
             }
 
-        print("Creating structured feature info using AI...")
+        logging.info("Creating structured feature info using AI...")
 
         prompt = f"""
         You are an expert at analyzing technical documentation and creating structured feature information for test generation.
@@ -478,14 +481,14 @@ class DocumentProcessor:
             feature_info = json.loads(response.choices[0].message.content)
 
             if "name" in feature_info and "description" in feature_info:
-                print(f"Successfully created feature info for: {feature_info['name']}")
+                logging.info(f"Successfully created feature info for: {feature_info['name']}")
                 return feature_info
             else:
-                print("Warning: AI response missing required fields. Using fallback.")
+                logging.warning("AI response missing required fields. Using fallback.")
                 raise ValueError("Invalid response structure")
 
         except Exception as e:
-            print(f"Error creating feature info with AI: {e}")
+            logging.error(f"Error creating feature info with AI: {e}")
             return {
                 "name": input_dir_name.replace('_', ' ').replace('-', ' ').title(),
                 "description": content[:10000] + "..." if len(content) > 10000 else content
@@ -502,22 +505,22 @@ class DocumentProcessor:
 
             # Check if docs directory exists
             if not docs_dir.exists():
-                print(f"Error: docs directory not found in {input_dir}")
+                logging.error(f"Docs directory not found in {input_dir}")
                 return False, "", {}
-            print("=" * 60)
+            logging.info("=" * 60)
 
             # Load documents from docs directory
             doc_infos = self.load_documents_from_directory(docs_dir)
 
             if not doc_infos:
-                print("No documents found to process")
+                logging.info("No documents found to process")
                 return False, "", {}
 
             # Prepare content for processing
             prepared_content = self.prepare_content(doc_infos)
 
             if not prepared_content:
-                print("No meaningful content found in documents")
+                logging.info("No meaningful content found in documents")
                 return False, "", {}
 
             # Create feature info using AI
@@ -536,15 +539,15 @@ class DocumentProcessor:
             with open(json_file_path, 'w', encoding='utf-8') as f:
                 json.dump(feature_info, f, indent=2, ensure_ascii=False)
 
-            print(f"\nFeature Input JSON Created:")
-            print(f"  File: {json_file_path}")
-            print(f"  Feature: {feature_info['name']}")
-            print(f"  Description length: {len(feature_info['description']):,} characters")
+            logging.info(f"\nFeature Input JSON Created:")
+            logging.info(f"File: {json_file_path}")
+            logging.info(f"Feature: {feature_info['name']}")
+            logging.info(f"Description length: {len(feature_info['description']):,} characters")
 
             return True, str(json_file_path), feature_info
 
         except Exception as e:
-            print(f"Error processing input directory: {e}")
+            logging.error(f"Error processing input directory: {e}")
             if self.verbose:
                 import traceback
                 traceback.print_exc()

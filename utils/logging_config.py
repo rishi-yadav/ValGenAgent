@@ -9,7 +9,7 @@ from datetime import datetime
 def setup_logging(log_level=logging.WARNING, project_namespace=None):
     """Setup global logging configuration."""
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    log_file = f"vca_{timestamp}.log"
+    log_file = f"vga_{timestamp}.log"
     Path('logs').mkdir(parents=True, exist_ok=True)
     log_path = os.path.join('logs', log_file)
     

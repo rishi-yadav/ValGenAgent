@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from dotenv import load_dotenv
 import shutil
 import importlib
-import logging
+import logging as logger
 # Import the new OpenAI API key utility
 from utils.openai_api_key_utils import get_openai_api_key
 from utils.logging_config import setup_logging
@@ -36,6 +36,8 @@ from utils.document_processor import DocumentProcessor
 # Import the modules directly
 from test_plangenerator import generate_test_plan_files
 from agents.codegen_agent import run_test_automation
+
+logging = logger.getLogger("VGA") 
 
 # Load environment variables
 load_dotenv()
@@ -88,25 +90,25 @@ class TestWorkflowRunner:
     def load_feature_info(self) -> Dict:
         """Load feature information from feature input file."""
         if not self.feature_input_file or not os.path.exists(self.feature_input_file):
-            print("Warning: No feature input file provided or file does not exist")
+            logging.warning("No feature input file provided or file does not exist")
             return {}
 
         try:
-            print(f"Loading feature information from: {self.feature_input_file}")
+            logging.debug(f"Loading feature information from: {self.feature_input_file}")
 
             with open(self.feature_input_file, 'r', encoding='utf-8') as f:
                 feature_info = json.load(f)
 
             # Validate required fields
             if 'name' not in feature_info or 'description' not in feature_info:
-                print("Error: Feature input file must contain 'name' and 'description' fields")
+                logging.error("Feature input file must contain 'name' and 'description' fields")
                 return {}
 
-            print(f"Loaded feature: {feature_info['name']}")
+            logging.info(f"Loaded feature: {feature_info['name']}")
             return feature_info
 
         except Exception as e:
-            print(f"Error loading feature info from file: {e}")
+            logging.error(f"Error loading feature info from file: {e}")
             import traceback
             if self.verbose:
                 traceback.print_exc()
@@ -115,29 +117,29 @@ class TestWorkflowRunner:
     def load_additional_docs_content(self) -> str:
         """Load additional documentation content from input_dirs directory."""
         if not self.input_dirs_path.exists():
-            print(f"Warning: Static input directory {self.input_dirs_path} does not exist")
+            logging.warning(f"Static input directory {self.input_dirs_path} does not exist")
             return ""
 
         try:
-            print(f"Loading additional documentation from: {self.input_dirs_path}")
+            logging.debug(f"Loading additional documentation from: {self.input_dirs_path}")
             stage_start = time.time()
 
             # Load documents from docs directory and URLs
             doc_infos = self.doc_processor.load_documents_from_directory(self.input_dirs_path / "docs")
 
             if not doc_infos:
-                print("No additional documentation found")
+                logging.info("No additional documentation found")
                 return ""
 
             # Prepare content for inclusion in test plan generation
             prepared_content = self.doc_processor.prepare_content(doc_infos)
 
             stage_time = time.time() - stage_start
-            print(f"Additional documentation loading completed in {stage_time:.2f} seconds")
+            logging.info(f"Additional documentation loading completed in {stage_time:.2f} seconds")
             return prepared_content
 
         except Exception as e:
-            print(f"Error loading additional documentation: {e}")
+            logging.error(f"Error loading additional documentation: {e}")
             import traceback
             if self.verbose:
                 traceback.print_exc()
@@ -146,15 +148,15 @@ class TestWorkflowRunner:
     def generate_test_plan(self) -> Tuple[bool, str]:
         """Generate test plan document."""
         if self.test_plan_file and os.path.exists(self.test_plan_file):
-            print(f"Using existing test plan: {self.test_plan_file}")
+            logging.info(f"Using existing test plan: {self.test_plan_file}")
             return True, self.test_plan_file
 
         try:
-            print("Loading feature information...")
+            logging.info("Loading feature information...")
             feature_info = self.load_feature_info()
 
             if not feature_info:
-                print("Error: No valid feature information found")
+                logging.error("No valid feature information found")
                 return False, ""
 
             # Extract name from feature_info and create filename
@@ -174,16 +176,16 @@ class TestWorkflowRunner:
             enhanced_feature_info = feature_info.copy()
             if additional_docs_content:
                 enhanced_feature_info['additional_documentation'] = additional_docs_content
-                print("Added additional documentation content to feature info")
+                logging.info("Added additional documentation content to feature info")
 
             # Save enhanced feature info to temporary file
             feature_info_path = self.output_dir / "temp_feature_info.json"
             with open(feature_info_path, 'w', encoding='utf-8') as f:
                 json.dump(enhanced_feature_info, f, indent=2, ensure_ascii=False)
 
-            print(f"Temporary feature info saved to: {feature_info_path}")
+            logging.info(f"Temporary feature info saved to: {feature_info_path}")
 
-            print("Generating test plan...")
+            logging.debug("Generating test plan...")
             plan_start = time.time()
 
             success = generate_test_plan_files(
@@ -196,10 +198,10 @@ class TestWorkflowRunner:
             plan_time = time.time() - plan_start
 
             if not success:
-                print("Error generating test plan")
+                logging.error("Error generating test plan")
                 return False, ""
 
-            print(f"Test plan generation completed in {plan_time:.2f} seconds")
+            logging.info(f"Test plan generation completed in {plan_time:.2f} seconds")
 
             # Clean up temporary file
             if feature_info_path and feature_info_path.exists():
@@ -209,18 +211,18 @@ class TestWorkflowRunner:
             return True, str(test_plan_json)
 
         except Exception as e:
-            print(f"Error in test plan generation: {e}")
+            logging.error(f"Error in test plan generation: {e}")
             import traceback
             traceback.print_exc()
             return False, ""
 
     def run_test_automation(self, test_plan_file: str) -> bool:
         """Run test automation agent to generate and execute tests."""
-        print("Initializing test automation...")
+        logging.debug("Initializing test automation...")
         try:
             output_dir = self.output_dir
 
-            print("Generating test code...")
+            logging.debug("Generating test code...")
             # Call the function directly instead of subprocess
             success = run_test_automation(
                 self.args,
@@ -234,27 +236,27 @@ class TestWorkflowRunner:
             )
 
             if not success:
-                print("Error in test automation: Test generation failed")
+                logging.error("Error in test automation: Test generation failed")
                 return False
 
             if self.args.execute_python or self.args.execute_cpp:
-                print("Test generation and execution completed")
+                logging.info("Test generation and execution completed")
             elif self.args.build:
-                print("Test generation and build completed")
+                logging.info("Test generation and build completed")
             else:
-                print("Test code generation completed")
+                logging.info("Test code generation completed")
 
             return True
 
         except Exception as e:
-            print(f"Error running test automation: {e}")
+            logging.error(f"Error running test automation: {e}")
             import traceback
             traceback.print_exc()
             return False
 
     def collect_test_results(self) -> List[TestResult]:
         """Collect results from test execution."""
-        print("Parsing test results...")
+        logging.debug("Parsing test results...")
         results_start = time.time()
 
         results = []
@@ -276,21 +278,21 @@ class TestWorkflowRunner:
                     results.append(result)
 
             except Exception as e:
-                print(f"Error parsing test results from {xml_file}: {e}")
+                logging.error(f"Error parsing test results from {xml_file}: {e}")
 
         results_time = time.time() - results_start
-        print(f"Results collection completed in {results_time:.2f} seconds")
+        logging.info(f"Results collection completed in {results_time:.2f} seconds")
 
         return results
 
     def save_results_to_excel(self, results: List[TestResult]) -> None:
         """Save test results to Excel file."""
         if not results:
-            print("No test results to save")
+            logging.info("No test results to save")
             return
 
         try:
-            print("Creating Excel report...")
+            logging.debug("Creating Excel report...")
             excel_start = time.time()
 
             df = pd.DataFrame([
@@ -307,33 +309,33 @@ class TestWorkflowRunner:
             df.to_excel(excel_file, index=False)
 
             excel_time = time.time() - excel_start
-            print(f"Excel report saved to: {excel_file}")
-            print(f"Excel generation completed in {excel_time:.2f} seconds")
+            logging.info(f"Excel report saved to: {excel_file}")
+            logging.info(f"Excel generation completed in {excel_time:.2f} seconds")
 
         except Exception as e:
-            print(f"Error saving results to Excel: {e}")
+            logging.error(f"Error saving results to Excel: {e}")
 
     def print_workflow_summary(self):
         """Print a summary of the workflow configuration."""
-        print("=" * 60)
-        print(f"Test Workflow Configuration")
-        print("=" * 60)
-        print(f"Output Directory: {self.output_dir}")
-        print(f"Generate Test Plan: {'Yes' if self.generate_plan else 'No'}")
-        print(f"Run Test Automation: {'Yes' if self.run_automation else 'No'}")
+        logging.info("=" * 60)
+        logging.info(f"Test Workflow Configuration")
+        logging.info("=" * 60)
+        logging.info(f"Output Directory: {self.output_dir}")
+        logging.info(f"Generate Test Plan: {'Yes' if self.generate_plan else 'No'}")
+        logging.info(f"Run Test Automation: {'Yes' if self.run_automation else 'No'}")
         if self.args.execute_python:
-            print(f"Execute Python Tests: {'Yes' if self.args.execute_python else 'No'}")
+            logging.info(f"Execute Python Tests: {'Yes' if self.args.execute_python else 'No'}")
         elif self.args.build:
-            print(f"Build CPP Tests: {'Yes' if self.args.build else "No"}")
-            print(f"Execute CPP Tests: {'Yes' if self.args.execute_cpp else "No"}")
+            logging.info(f"Build CPP Tests: {'Yes' if self.args.build else "No"}")
+            logging.info(f"Execute CPP Tests: {'Yes' if self.args.execute_cpp else "No"}")
         if self.test_plan_file:
-            print(f"Test Plan File: {self.test_plan_file}")
+            logging.info(f"Test Plan File: {self.test_plan_file}")
         if self.feature_input_file:
-            print(f"Feature Input File: {self.feature_input_file}")
-        print(f"Static Input Directory: {self.input_dirs_path}")
-        print(f"  - Docs Directory: {self.input_dirs_path / 'docs'}")
-        print(f"  - URLs File: {self.input_dirs_path / 'public_urls_testplan.txt'}")
-        print("=" * 60)
+            logging.info(f"Feature Input File: {self.feature_input_file}")
+        logging.info(f"Static Input Directory: {self.input_dirs_path}")
+        logging.info(f"Docs Directory: {self.input_dirs_path / 'docs'}")
+        logging.info(f"URLs File: {self.input_dirs_path / 'public_urls_testplan.txt'}")
+        logging.info("=" * 60)
 
     def run(self) -> bool:
         """Run the complete test workflow."""
@@ -345,9 +347,9 @@ class TestWorkflowRunner:
 
         # Step 1: Generate test plan (if enabled)
         if self.generate_plan:
-            print("\n" + "="*60)
-            print("STAGE 1: TEST PLAN GENERATION")
-            print("="*60)
+            logging.info("="*60)
+            logging.info("STAGE 1: TEST PLAN GENERATION")
+            logging.info("="*60)
             stage1_start = time.time()
 
             success, test_plan_file = self.generate_test_plan()
@@ -355,16 +357,16 @@ class TestWorkflowRunner:
             stage1_time = time.time() - stage1_start
 
             if not success:
-                print("FAILED: Failed to generate test plan.")
+                logging.error("FAILED: Failed to generate test plan.")
                 return False
 
-            print(f"SUCCESS: Stage 1 completed successfully in {stage1_time:.2f} seconds")
-            print(f"   Test plan saved: {test_plan_file}")
+            logging.info(f"SUCCESS: Stage 1 completed successfully in {stage1_time:.2f} seconds")
+            logging.info(f"Test plan saved: {test_plan_file}")
         else:
             # Use provided test plan file or look for existing one
             if self.test_plan_file and os.path.exists(self.test_plan_file):
                 test_plan_file = self.test_plan_file
-                print(f"Using existing test plan: {test_plan_file}")
+                logging.info(f"Using existing test plan: {test_plan_file}")
             else:
                 # Look for existing test plan in output directory (prefer JSON for automation)
                 possible_plans = [
@@ -374,71 +376,71 @@ class TestWorkflowRunner:
                 for plan_file in possible_plans:
                     if plan_file.exists():
                         test_plan_file = str(plan_file)
-                        print(f"Found existing test plan: {test_plan_file}")
+                        logging.info(f"Found existing test plan: {test_plan_file}")
                         break
 
                 if not test_plan_file:
-                    print("Error: No test plan file found and test plan generation is disabled.")
-                    print("Either provide --test-plan or enable --generate-plan")
+                    logging.error("No test plan file found and test plan generation is disabled.")
+                    logging.error("Either provide --test-plan or enable --generate-plan")
                     return False
 
         # Step 2: Run test automation (if enabled)
         if self.run_automation:
-            print("\n" + "="*60)
+            logging.info("="*60)
             if self.args.execute_python or self.args.execute_cpp:
-                print("STAGE 2: TEST CODE GENERATION & EXECUTION")
+                logging.info("STAGE 2: TEST CODE GENERATION & EXECUTION")
             elif self.args.build:
-                print("STAGE 2: TEST CODE GENERATION & BUILD")
+                logging.info("STAGE 2: TEST CODE GENERATION & BUILD")
             else:
-                print("STAGE 2: TEST CODE GENERATION")
-            print("="*60)
+                logging.info("STAGE 2: TEST CODE GENERATION")
+            logging.info("="*60)
             stage2_start = time.time()
 
             if not self.run_test_automation(test_plan_file):
-                print("FAILED: Failed to run test automation.")
+                logging.error("FAILED: Failed to run test automation.")
                 return False
 
             stage2_time = time.time() - stage2_start
-            print(f"SUCCESS: Stage 2 completed successfully in {stage2_time:.2f} seconds")
+            logging.info(f"SUCCESS: Stage 2 completed successfully in {stage2_time:.2f} seconds")
 
             # Step 3: Collect and save results (only if automation ran and tests are executed)
             if self.args.execute_python:
-                print("\n" + "="*60)
-                print("STAGE 3: RESULTS COLLECTION & REPORTING")
-                print("="*60)
+                logging.info("="*60)
+                logging.info("STAGE 3: RESULTS COLLECTION & REPORTING")
+                logging.info("="*60)
                 stage3_start = time.time()
 
                 results = self.collect_test_results()
                 self.save_results_to_excel(results)
 
                 stage3_time = time.time() - stage3_start
-                print(f"SUCCESS: Stage 3 completed successfully in {stage3_time:.2f} seconds")
+                logging.info(f"SUCCESS: Stage 3 completed successfully in {stage3_time:.2f} seconds")
 
                 # Print test execution summary
                 passed = sum(1 for r in results if r.status == 'Passed')
                 failed = sum(1 for r in results if r.status == 'Failed')
 
-                print("\n" + "="*60)
-                print("TEST EXECUTION SUMMARY")
-                print("="*60)
-                print(f"Total Tests: {len(results)}")
-                print(f"Passed: {passed}")
-                print(f"Failed: {failed}")
-                print(f"Success Rate: {(passed/len(results)*100):.1f}%" if results else "0%")
+                logging.info("="*60)
+                logging.info("TEST EXECUTION SUMMARY")
+                logging.info("="*60)
+                logging.info(f"Total Tests: {len(results)}")
+                logging.info(f"Passed: {passed}")
+                logging.info(f"Failed: {failed}")
+                logging.info(f"Success Rate: {(passed/len(results)*100):.1f}%" if results else "0%")
 
                 workflow_time = time.time() - workflow_start
-                print(f"\nTotal Workflow Time: {workflow_time:.2f} seconds")
+                logging.info(f"Total Workflow Time: {workflow_time:.2f} seconds")
 
                 return failed == 0
             elif self.args.execute_cpp:
-                print("Test execution step completed successfully.")
+                logging.info("Test execution step completed successfully.")
             elif self.args.build:
-                print("Test build step completed successfully.")
+                logging.info("Test build step completed successfully.")
             else:
-                print("Test execution step skipped.")
+                logging.info("Test execution step skipped.")
 
         workflow_time = time.time() - workflow_start
-        print(f"\nTotal Workflow Time: {workflow_time:.2f} seconds")
+        logging.info(f"Total Workflow Time: {workflow_time:.2f} seconds")
         return True
 
 def main() -> None:
@@ -477,7 +479,6 @@ def main() -> None:
     parser.add_argument("--execute_dir", help="execute dir path: directory path for execution")
     parser.add_argument("--execute_args", nargs=argparse.REMAINDER, default=[], help="Arguments to be added for execution. ex: ./filename --device gaudi2")
     parser.add_argument('--execute_python',action='store_true',help='Execute generated tests (default: False)')
-
     # Step control arguments
     step_group = parser.add_mutually_exclusive_group()
     step_group.add_argument('--generate_plan_only', action='store_true',
@@ -491,8 +492,8 @@ def main() -> None:
                         help='path to the system prompts directory to use for the test generation workflow.')
     args = parser.parse_args()
 
-    log_level = logging.INFO if args.verbose else logging.WARNING
-    setup_logging(log_level,project_namespace="VCA")
+    log_level = logger.DEBUG if args.verbose else logger.WARNING
+    setup_logging(log_level,project_namespace="VGA")
 
     if args.build:
         if not args.build_dir or not args.build_cmd:
@@ -507,7 +508,7 @@ def main() -> None:
         code_agent_prompt = importlib.import_module(f'{module_path}.code_agent_system_prompt')
         review_agent_prompt = importlib.import_module(f'{module_path}.review_agent_system_prompt')
         test_coordinator_prompt = importlib.import_module(f'{module_path}.test_coordinator_system_prompt')
-        print(f"[Info]: Running test workflow with prompt: {module_path}")
+        logging.info(f"Running test workflow with prompt: {module_path}")
     except AssertionError as e:
         assert f"Error in dynamic prompt import : {e}"
 
@@ -518,30 +519,30 @@ def main() -> None:
     if args.generate_plan_only:
         generate_plan = True
         run_automation = False
-        print("Mode: Generate test plan only")
+        logging.info("Mode: Generate test plan only")
     elif args.test_automation_only:
         generate_plan = False
         run_automation = True
-        print("Mode: Test automation only")
+        logging.info("Mode: Test automation only")
     else:
         # Default mode: generate plan (if needed) + test automation
         # The execute_python flag will control whether tests are actually executed
         if args.execute_python:
-            print("Mode: Complete workflow (generate plan + test automation + execution)")
+            logging.info("Mode: Complete workflow (generate plan + test automation + execution)")
         elif args.build:
-            print("Mode: Build cpp executables(generate plan + test automation + build)")
+            logging.info("Mode: Build cpp executables(generate plan + test automation + build)")
         elif args.execute_cpp:
-            print("Mode: execute cpp after building cpp executables(generate plan + test automation + build + execute)")
+            logging.info("Mode: execute cpp after building cpp executables(generate plan + test automation + build + execute)")
         else:
-            print("Mode: Generate tests only (skip execution)")
+            logging.info("Mode: Generate tests only (skip execution)")
 
     index_db_dir='index_db/'
     if args.remove_index_db:
         if os.path.exists(index_db_dir):
             shutil.rmtree(index_db_dir)
-            print(f"Deleted the directory: {index_db_dir}")
+            logging.info(f"Deleted the directory: {index_db_dir}")
         else:
-            print(f"The directory {index_db_dir} does not exist.")
+            logging.info(f"The directory {index_db_dir} does not exist.")
 
     runner = TestWorkflowRunner(
         args=args,

@@ -12,7 +12,6 @@ import mimetypes
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
 import tempfile
-import logging
 
 # Document processing imports
 from docx import Document
@@ -22,28 +21,28 @@ from openpyxl import load_workbook
 # AI processing
 from openai import OpenAI
 from dotenv import load_dotenv
+import logging
 
+logger = logging.getLogger("VGA") 
 # Optional imports for additional formats
 try:
     from pptx import Presentation
     PPTX_AVAILABLE = True
 except ImportError:
     PPTX_AVAILABLE = False
-    print("Warning: python-pptx not available. PowerPoint files will not be supported.")
+    logger.warning("python-pptx not available. PowerPoint files will not be supported.")
 
 try:
     import PyPDF2
     PDF_AVAILABLE = True
 except ImportError:
     PDF_AVAILABLE = False
-    print("Warning: PyPDF2 not available. PDF files will not be supported.")
+    logger.warning("PyPDF2 not available. PDF files will not be supported.")
+
 
 # Load environment variables
 load_dotenv()
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 class InputConverter:
     """
@@ -253,56 +252,56 @@ class InputConverter:
         format_description = self.SUPPORTED_FORMATS.get(file_format, "Unknown")
 
         # Print input format information
-        print(f"\nInput File Analysis:")
-        print(f"   File: {input_file_name}")
-        print(f"   Format: {format_description} ({file_format})")
+        logger.info(f"\nInput File Analysis:")
+        logger.info(f"File: {input_file_name}")
+        logger.info(f"Format: {format_description} ({file_format})")
 
         # If already JSON, validate and return as-is
         if file_format == '.json':
-            print(f"   Status: Validating existing JSON structure...")
+            logger.info(f"Status: Validating existing JSON structure...")
             try:
                 with open(file_path, 'r', encoding='utf-8') as f:
                     json_content = json.load(f)
 
-                print(f"   JSON file loaded successfully")
+                logger.info(f"JSON file loaded successfully")
                 # Even for valid JSON, save a copy if output_file is specified
                 if output_file and output_file != file_path:
                     try:
                         with open(output_file, 'w', encoding='utf-8') as f:
                             json.dump(json_content, f, indent=2)
-                        print(f"   Copied to: {output_file}")
+                        logger.info(f"Copied to: {output_file}")
                         return True, output_file, json_content
                     except Exception as e:
                         logger.error(f"Error copying JSON file: {e}")
                 return True, file_path, json_content
             except Exception as e:
-                print(f"   Error reading JSON file: {e}")
+                logger.error(f"Error reading JSON file: {e}")
                 return False, "", {}
 
         # Extract text content
-        print(f"   Status: Extracting content from {format_description}...")
+        logger.info(f"Status: Extracting content from {format_description}...")
         success, text_content, error = self.extract_text_from_file(file_path)
         if not success:
-            print(f"   Failed to extract content: {error}")
+            logger.error(f"Failed to extract content: {error}")
             return False, "", {}
 
-        print(f"   Successfully extracted {len(text_content)} characters")
+        logger.info(f"Successfully extracted {len(text_content)} characters")
 
         # Convert to JSON using AI
-        print(f"\nAI Conversion Process:")
-        print(f"   Converting {format_description} content to standardized JSON format...")
+        logger.info(f"\nAI Conversion Process:")
+        logger.info(f"Converting {format_description} content to standardized JSON format...")
 
         if not self.client:
-            print(f"   No OpenAI client available for AI conversion")
+            logger.error(f"No OpenAI client available for AI conversion")
             logger.error("No OpenAI client available for AI conversion")
             return False, "", {}
 
         json_content = self._convert_text_to_json_with_ai(text_content, file_path)
         if not json_content:
-            print(f"   AI conversion failed")
+            logger.info(f"AI conversion failed")
             return False, "", {}
 
-        print(f"   Successfully converted to JSON format")
+        logger.info(f"Successfully converted to JSON format")
 
         # Determine output file path
         if not output_file:
@@ -312,14 +311,14 @@ class InputConverter:
 
         # Always save to disk
         try:
-            print(f"\nSaving Converted JSON:")
+            logger.info(f"\nSaving Converted JSON:")
             with open(output_file, 'w', encoding='utf-8') as f:
                 json.dump(json_content, f, indent=2)
-            print(f"   Successfully saved to: {output_file}")
-            print(f"   JSON contains: name='{json_content.get('name', 'N/A')}', description length={len(json_content.get('description', ''))}")
+            logger.info(f"Successfully saved to: {output_file}")
+            logger.info(f"JSON contains: name='{json_content.get('name', 'N/A')}', description length={len(json_content.get('description', ''))}")
             return True, output_file, json_content
         except Exception as e:
-            print(f"   Error saving JSON file: {e}")
+            logger.error(f"Error saving JSON file: {e}")
             logger.error(f"Error saving JSON file: {e}")
             return False, "", {}
 
