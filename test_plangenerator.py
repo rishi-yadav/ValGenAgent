@@ -8,10 +8,15 @@ from docx.shared import Pt
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from typing import Dict, Any, Optional, List
 from dotenv import load_dotenv
-import openai
-from openai import OpenAI
+from openai import AzureOpenAI
 from prompts.collective.test_plan_generation_system_prompt import TEST_PLAN_SYSTEM_PROMPT
 import logging
+
+from utils.azure_key import (
+    AZURE_OPENAI_API_KEY,
+    AZURE_OPENAI_INFERENCE_URL,
+    AZURE_OPENAI_INFERENCE_API_VERSION,
+)
 
 logging = logging.getLogger("VGA") 
 
@@ -36,14 +41,13 @@ def generate_test_plan(args, api_key: Optional[str] = None, feature_info: Option
                raw_response: Raw response text for debugging (empty string if failed)
     """
     try:
-        openai.api_key = api_key or os.getenv("OPENAI_API_KEY")
-        if not openai.api_key:
-            logging.error("OpenAI API key not found. Provide it as an argument or set the OPENAI_API_KEY environment variable.")
-            return False, {}, ""
 
         # Use Intel's internal API if needed, otherwise use standard OpenAI endpoint
-        base_url = "https://apis-internal.intel.com/generativeaiinference/v4"
-        client = OpenAI(api_key=openai.api_key, base_url=base_url)
+        client = AzureOpenAI(
+            azure_endpoint = AZURE_OPENAI_INFERENCE_URL,
+            api_key=AZURE_OPENAI_API_KEY,
+            api_version=AZURE_OPENAI_INFERENCE_API_VERSION
+        )
 
         base_prompt = TEST_PLAN_SYSTEM_PROMPT
         if feature_info:

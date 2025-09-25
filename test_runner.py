@@ -27,7 +27,6 @@ import shutil
 import importlib
 import logging as logger
 # Import the new OpenAI API key utility
-from utils.openai_api_key_utils import get_openai_api_key
 from utils.logging_config import setup_logging
 
 # Import the new document processor
@@ -54,7 +53,6 @@ class TestWorkflowRunner:
     """Manages the end-to-end test workflow"""
 
     def __init__(self, args,
-                 api_key = None,
                  generate_plan: bool = True,
                  run_automation: bool = True,
                  code_agent_prompt: Optional[str] = None,
@@ -64,7 +62,6 @@ class TestWorkflowRunner:
         self.output_dir = Path(args.output_dir)
         self.verbose = args.verbose
         self.test_plan_file = args.test_plan
-        self.api_key = api_key or get_openai_api_key()
         self.feature_input_file = args.feature_input_file
         self.generate_plan = generate_plan
         self.run_automation = run_automation
@@ -81,7 +78,6 @@ class TestWorkflowRunner:
         # Initialize document processor
         self.doc_processor = DocumentProcessor(
             self.args,
-            api_key=self.api_key,
         )
 
         # Create output directory
