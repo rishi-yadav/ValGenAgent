@@ -20,18 +20,11 @@ from prompts.save_and_build_agent_system_prompt import SAVE_AND_BUILD_AGENT_SYST
 # Import the utilities required for the agents
 from utils.build import save_build_run
 from utils.expected_patterns import LANGUAGE_PATTERNS
-
-from utils.azure_key import (
-    AZURE_OPENAI_API_KEY,
-    AZURE_OPENAI_INFERENCE_URL,
-    AZURE_OPENAI_INFERENCE_API_VERSION,
-    AZURE_OPENAI_INFERENCE_ENDPOINT,
-    AZURE_OPENAI_INFERENCE_MODEL,
-    AZURE_OPENAI_EMBEDDING_ENDPOINT,
-    AZURE_OPENAI_EMBEDDING_API_VERSION,
-    AZURE_OPENAI_INFERENCE_DEPLOYMENT
+from utils.openai_endpoints import (
+    EMBEDDING_BASE_URL,
+    INFERENCE_BASE_URL,
+    MODEL_INFERENCE
 )
-
 from utils.file_io import (
     FileIO, 
     TestPlanParser
@@ -52,12 +45,11 @@ load_dotenv()
 
 # Configure autogen for Intel's internal API
 config_list = [
-     {
-        "model": AZURE_OPENAI_INFERENCE_MODEL,  
-        "api_type": "azure",
-        "base_url": AZURE_OPENAI_INFERENCE_URL,
-        "api_key": AZURE_OPENAI_API_KEY,
-        "api_version": AZURE_OPENAI_INFERENCE_API_VERSION,
+    {
+        "model": MODEL_INFERENCE,
+        "base_url": INFERENCE_BASE_URL,
+        "api_type": "openai",
+        "max_tokens": 5000
     }
 ]
 
@@ -68,7 +60,7 @@ llm_config = {
 
 INPUT_DIR = 'input_dirs'
 URLS_FILE = f"{INPUT_DIR}/public_urls.txt"
-
+os.environ["OPENAI_API_BASE"] = EMBEDDING_BASE_URL
 
 @dataclass
 class TestCase:
@@ -292,13 +284,10 @@ class MultiAgentTestOrchestrator:
         # Initialize knowledge base only if available
         if VECTOR_DB_AVAILABLE and KnowledgeBase:
             self.kb = KnowledgeBase(
-                aoai_api_key=AZURE_OPENAI_API_KEY,
-                aoai_inf_endpoint_version=AZURE_OPENAI_INFERENCE_API_VERSION,
-                aoai_inf_endpoint=AZURE_OPENAI_INFERENCE_ENDPOINT,
-                aoai_embd_endpoint=AZURE_OPENAI_EMBEDDING_ENDPOINT,
-                aoai_embd_endpoint_version=AZURE_OPENAI_EMBEDDING_API_VERSION,
-                model_name=AZURE_OPENAI_INFERENCE_MODEL,
-                aoai_api_version=AZURE_OPENAI_INFERENCE_DEPLOYMENT,
+                api_key=os.getenv("OPENAI_API_KEY"),
+                embed_base_url=EMBEDDING_BASE_URL,
+                llm_base_url=INFERENCE_BASE_URL,
+                model_name=MODEL_INFERENCE,
             )
 
         kb_success = self.build_knowledge_base(

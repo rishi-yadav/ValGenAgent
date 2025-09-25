@@ -16,8 +16,6 @@ import warnings
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
-from openai import AzureOpenAI
-
 
 # Suppress warnings from transformers and other libraries
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -37,13 +35,6 @@ from llama_index.readers.web import BeautifulSoupWebReader
 from openai import OpenAI
 from dotenv import load_dotenv
 import logging
-
-
-from utils.azure_key import (
-    AZURE_OPENAI_API_KEY,
-    AZURE_OPENAI_INFERENCE_URL,
-    AZURE_OPENAI_INFERENCE_API_VERSION,
-)
 
 logging = logging.getLogger("VGA") 
 
@@ -76,15 +67,16 @@ class DocumentProcessor:
             api_key: OpenAI API key
             base_url: Custom base URL for OpenAI API
         """
-        
+        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self.base_url = base_url or "https://apis-internal.intel.com/generativeaiinference/v4"
         self.verbose = args.verbose
 
-
-        self.client = AzureOpenAI(
-            azure_endpoint = AZURE_OPENAI_INFERENCE_URL,
-            api_key=AZURE_OPENAI_API_KEY,
-            api_version=AZURE_OPENAI_INFERENCE_API_VERSION
-        )
+        # Initialize OpenAI client
+        if self.api_key:
+            self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
+        else:
+            logging.warning("No OpenAI API key provided. AI features will not be available.")
+            self.client = None
 
         # Initialize tokenizer for GPT-4o
         try:
