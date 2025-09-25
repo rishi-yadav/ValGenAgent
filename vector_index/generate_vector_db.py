@@ -20,6 +20,13 @@ from llama_index.core.node_parser import CodeSplitter, HierarchicalNodeParser
 from llama_index.packs.code_hierarchy import CodeHierarchyNodeParser
 import logging
 
+# from llama_index.core import Settings
+
+from llama_index.embeddings.azure_inference import AzureAIEmbeddingsModel
+from llama_index.llms.azure_openai import AzureOpenAI
+
+
+
 logging = logging.getLogger("VGA") 
 
 class KnowledgeBase:
@@ -27,36 +34,45 @@ class KnowledgeBase:
 
     def __init__(
         self,
-        api_key,
-        embed_base_url,
-        llm_base_url,
-        model_name="gpt-4o",
+        aoai_api_key,
+        aoai_inf_endpoint_version,
+        aoai_inf_endpoint,
+        aoai_embd_endpoint,
+        aoai_embd_endpoint_version,
+        aoai_api_version,
+        model_name,
         knowledge_index_dir="./index_db",
         embedding_model="text-embedding-ada-002",
         embedding_dim=1536
     ):
-        self.api_key = api_key
-        self.embed_base_url = embed_base_url
-        self.llm_base_url = llm_base_url
+        self.aoai_api_key=aoai_api_key
+        self.aoai_inf_endpoint_version=aoai_inf_endpoint_version
+        self.aoai_inf_endpoint=aoai_inf_endpoint
+        self.aoai_embd_endpoint=aoai_embd_endpoint
+        self.aoai_embd_endpoint_version=aoai_embd_endpoint_version
+        self.aoai_api_version=aoai_api_version
         self.model_name = model_name
         self.knowledge_index_dir = knowledge_index_dir
         self.embedding_model = embedding_model
         self.embedding_dim = embedding_dim
 
         # Create embedding model
-        self.embed_model = OpenAIEmbedding(
-            model=embedding_model,
-            api_key=api_key,
-            base_url=embed_base_url
+        self.llm = AzureOpenAI(
+            engine=aoai_api_version,
+            model=model_name,
+            api_key=aoai_api_key,
+            azure_endpoint=aoai_inf_endpoint,
+            api_version=aoai_inf_endpoint_version,
         )
 
-        # Create LLM
-        self.llm = OpenAILike(
-            model=model_name,
-            api_base=llm_base_url,
-            api_key=api_key,
-            is_chat_model=True
+        self.embed_model = AzureAIEmbeddingsModel(
+            endpoint=aoai_embd_endpoint,
+            credential=aoai_api_key,
+            model_name=embedding_model,
+            api_version=aoai_embd_endpoint_version,
         )
+
+
 
         # Initialize index
         self.index = None
@@ -172,6 +188,7 @@ class KnowledgeBase:
                     self.index = VectorStoreIndex(
                         nodes,
                         embed_model=self.embed_model,
+                        llm=self.llm,
                         show_progress=True
                     )
                     logging.info(f"Saving freshly created vector index to {persist_dir}")
@@ -183,6 +200,7 @@ class KnowledgeBase:
             self.index = VectorStoreIndex(
                 nodes,
                 embed_model=self.embed_model,
+                llm=self.llm,
                 show_progress=True
             )
             logging.info(f"Saving vector index to {persist_dir}")
