@@ -169,6 +169,13 @@ class ContextManagedGroupChat(autogen.GroupChat):
         self.messages = managed_messages
         logging.info(f"[GroupChat]- Context auto-managed: reduced to {len(self.messages)} messages")
 
+class CustomUserProxyAgent(autogen.UserProxyAgent):
+    def get_human_input(self, prompt: str = "Your input: ") -> str:
+        # Customize message shown to user
+        custom_message = "[Human Feedback Requested] Please provide your feedback. Flow for agent is [Code-generation -> Review -> Execution/saving]. Human feedback agent can ask how to proceed: > "
+        return input(custom_message)
+
+
 class MultiAgentTestOrchestrator:
     def __init__(self, args, output_dir: str,
                  max_retries: int = 2,
@@ -210,7 +217,7 @@ class MultiAgentTestOrchestrator:
             system_message=self.review_agent_prompt)
         
         if args.human_feedback:
-            self.user_proxy = autogen.UserProxyAgent(
+            self.user_proxy = CustomUserProxyAgent(
                 name="HumanFeedbackAgent",
                 human_input_mode="ALWAYS",
                 code_execution_config=False,
@@ -339,7 +346,7 @@ class MultiAgentTestOrchestrator:
             try:
                 if self.args.human_feedback:
                     context_input=''
-                    context_input=input("\n\nEnter the input to fetch the context input from index_db: ")
+                    context_input=input("\n\nEnter the input to fetch the context input from index_db. Flow for agent is {context_retrieval->[Code-generation -> Review -> Execution/saving]}: ")
                     if context_input=='':
                         logging.info('Skipping retrieving context from index_db')
                         return ''
@@ -375,7 +382,7 @@ class MultiAgentTestOrchestrator:
         while True:
             try:
                 reply = initial_proxy_agent.generate_reply(
-                    messages=[{"role": "system", "content": "Please provide your Prompt here to start the code generation process (type 'exit' to quit)"}]
+                    messages=[{"role": "system", "content": "Please provide your Prompt here to start the code generation process (type 'exit' to quit). Flow for agent is {initial_prompt -> context_retrieval -> [Code-generation -> Review -> Execution/saving]}: "}]
                 )
             except Exception as e:
                 logging.error(f"[Orchestrator] - Error while getting user input: {e}", exc_info=True)
