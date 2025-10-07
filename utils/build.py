@@ -102,7 +102,7 @@ class ExeBuilder:
             return f"Failed to summarize {context}: {e}"
 
 
-def save_build_run(code: str, filename: str, directory: str, build: bool, build_cmd: str, build_dir: str, execute: bool, execute_dir: str, execute_args: list, llm_config=None) -> str:
+def save_build_run(code: str, filename: str, directory: str, build: bool, build_cmd: str, build_dir: str, execute: bool, execute_dir: str, execute_args: list, args, llm_config=None) -> str:
     """
     Save the test file, optionally build it, and optionally run executables.
     """

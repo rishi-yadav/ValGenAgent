@@ -208,13 +208,22 @@ class MultiAgentTestOrchestrator:
             name="TestCodeReviewAgent",
             llm_config=llm_config,
             system_message=self.review_agent_prompt)
+        
+        if args.human_feedback:
+            self.user_proxy = autogen.UserProxyAgent(
+                name="HumanFeedbackAgent",
+                human_input_mode="ALWAYS",
+                code_execution_config=False,
+                description="A human user capable of working with Autonomous AI Agents.",
+            )
 
         # Create a runner agent to execute tests
         if self.execute_python:
             # Full execution capability when tests should be executed
-            self.runner_agent = autogen.UserProxyAgent(
-                name="TestExecutionProxy",
-                human_input_mode="NEVER",
+            self.runner_agent = autogen.ConversableAgent(
+                name="TestExecutionAgent",
+                system_message="You are responsible for executing test code only after approval. Also summarize the execution and then call the user_proxy agent.",
+                human_input_mode="NEVER",  # fully automated, no manual input
                 max_consecutive_auto_reply=50,
                 code_execution_config={"executor": LocalCommandLineCodeExecutor(
                                                     timeout=120,
@@ -233,7 +242,8 @@ class MultiAgentTestOrchestrator:
                     execute=self.execute_cpp,
                     execute_dir=self.execute_dir,
                     execute_args=self.execute_args,
-                    llm_config=llm_config
+                    llm_config=llm_config,
+                    args=self.args
                 )
 
             self.runner_agent = autogen.ConversableAgent(
@@ -262,7 +272,7 @@ class MultiAgentTestOrchestrator:
             )
 
             self.runner_agent.register_for_execution(name="save_code")(save_code_to_file)
-            self.runner_agent.register_for_llm(name="save_code", description=f"Save code to a file to the path mentioned in {output_dir}. Do not change/modify the path where the output files should be saved. the Directory value when making the tool call should always be the value of {output_dir}")(save_code_to_file)
+            self.runner_agent.register_for_llm(name="save_code", description=f"Save code to a file to the path mentioned in The Directory={output_dir}. Do not change/modify the path where the output files should be saved. the Directory value when making the tool call should always be the value of {output_dir}")(save_code_to_file)
 
         # Create a coordinator agent to manage the conversation
         self.coordinator = autogen.UserProxyAgent(
@@ -270,12 +280,13 @@ class MultiAgentTestOrchestrator:
             human_input_mode="NEVER",
             max_consecutive_auto_reply=0,  # Allow coordinator to participate in conversation
             code_execution_config=False,
+            
             system_message="Coordinate the test generation and execution process between agents."
         )
 
         # Set up GroupChat - always include runner_agent but with different roles
         self.group_chat = ContextManagedGroupChat(
-            agents=[self.coordinator, self.codegen_agent, self.review_agent, self.runner_agent],
+            agents=[ self.coordinator, self.codegen_agent, *( [self.user_proxy] if args.human_feedback else [] ), self.review_agent, self.runner_agent],
             messages=[],
             max_round=50,  # Allow enough rounds for iterations
             max_context_messages=self.max_context_messages,
@@ -283,6 +294,7 @@ class MultiAgentTestOrchestrator:
         # GroupChat manager with custom speaker selection logic
         self.manager = autogen.GroupChatManager(
             groupchat=self.group_chat,
+            human_input_mode="NEVER",
             llm_config=llm_config,
             system_message=self.test_coordinator_prompt,
         )
@@ -309,6 +321,91 @@ class MultiAgentTestOrchestrator:
             logging.warning("[Orchestrator]- Knowledge base initialization failed, proceeding without it")
 
         self.FileIO=FileIO(self.output_dir)
+
+    def _get_context(self,context_input: str) -> str:
+        context = ""
+        if self.args.add_context_dir is not None:
+            logging.info(f"[Orchestrator]- Using the files at the directory {self.args.add_context_dir}")
+            combined_content = ""
+            for filename in os.listdir(self.args.add_context_dir):
+                file_path = os.path.join(self.args.add_context_dir, filename)
+                if os.path.isfile(file_path):
+                    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                        combined_content += f.read() + "\n"
+        
+            context=combined_content
+
+        elif self.kb:
+            try:
+                if self.args.human_feedback:
+                    context_input=''
+                    context_input=input("\n\nEnter the input to fetch the context input from index_db: ")
+                    if context_input=='':
+                        logging.info('Skipping retrieving context from index_db')
+                        return ''
+
+                context = self.kb.retrive_document_chunks(context_input)
+                if re.search(r'error', str(context), re.IGNORECASE):
+                    logging.warning(f"[Orchestrator]-  Failed to retrieve doc chunks for , proceeding without context")
+                    context = ""
+            except Exception as e:
+                logging.warning(f"[Orchestrator]- retrieving doc chunks: {e}, proceeding without context")
+                context = ""
+        else:
+            logging.warning(f"[Orchestrator]- Knowledge base not available, proceeding without context")
+
+        return context
+    
+    def human_in_loop(self) -> bool:
+        """Run human-in-the-loop flow with UserProxyAgent and GroupChat."""
+        logging.info("[Orchestrator] - Starting GroupChat with human-in-the-loop")
+
+        try:
+            initial_proxy_agent = autogen.UserProxyAgent(
+                name="User Proxy Agent",
+                system_message="You are required to take initial message from user.",
+                llm_config=False,
+                code_execution_config=False,
+                human_input_mode="ALWAYS",
+            )
+        except Exception as e:
+            logging.error(f"[Orchestrator] - Failed to initialize UserProxyAgent: {e}", exc_info=True)
+            return False
+
+        while True:
+            try:
+                reply = initial_proxy_agent.generate_reply(
+                    messages=[{"role": "system", "content": "Please provide your Prompt here to start the code generation process (type 'exit' to quit)"}]
+                )
+            except Exception as e:
+                logging.error(f"[Orchestrator] - Error while getting user input: {e}", exc_info=True)
+                break
+
+            if not reply or not isinstance(reply, dict) or "content" not in reply or reply==None:
+                logging.info("[Orchestrator] - No valid reply received, ending loop")
+                break
+
+            user_input = reply["content"].strip()
+            if user_input.lower() == "exit":
+                logging.info("[Orchestrator] - User requested exit, ending loop")
+                break
+
+            logging.debug(f"[Orchestrator] - Received user input: {user_input}")
+
+            context = self._get_context(user_input)
+            full_message = f"{context}\n{user_input}" if context else user_input
+
+            try:
+                self.coordinator.initiate_chat(
+                    self.manager,
+                    message=full_message,
+                    max_turns=20
+                )
+                logging.info("[Orchestrator] - GroupChat session completed")
+            except Exception as e:
+                logging.error(f"[Orchestrator] - Error during GroupChat initiation: {e}", exc_info=True)
+
+        return True
 
     def orchestrate_test_generation(self, test_plan_path: str):
         """Main orchestration method using GroupChat for natural agent communication"""
@@ -390,29 +487,7 @@ class MultiAgentTestOrchestrator:
             # Get context from knowledge base if available
             test_categories_string = ' '.join({tc['test_category'] for tc in relevant_tests})
             context_input=f"Test is {test_categories_string}"
-            context = ""
-            if self.args.add_context_dir is not None:
-                logging.info(f"[Orchestrator]- Using the files at the directory {self.args.add_context_dir}")
-                combined_content = ""
-                for filename in os.listdir(self.args.add_context_dir):
-                    file_path = os.path.join(self.args.add_context_dir, filename)
-                    if os.path.isfile(file_path):
-                        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                            combined_content += f.read() + "\n"
-            
-                context=combined_content
-        
-            elif self.kb:
-                try:
-                    context = self.kb.retrive_document_chunks(context_input)
-                    if "[Error]" in context or not context:
-                        logging.warning(f"[Orchestrator]-  Failed to retrieve doc chunks for {impl_file}, proceeding without context")
-                        context = ""
-                except Exception as e:
-                    logging.warning(f"[Orchestrator]- retrieving doc chunks: {e}, proceeding without context")
-                    context = ""
-            else:
-                logging.warning(f"[Orchestrator]- Knowledge base not available, proceeding without context")
+            context = self._get_context(context_input)
 
             if context:
                 prompt_with_context = f"Based on the following code context:\n\n{context}\n\n {initial_message}"
@@ -672,11 +747,11 @@ def run_test_automation(args, test_plan_path: str,
     """
     try:
         # Validate input file
-        if not os.path.exists(test_plan_path):
+        if not args.human_feedback and not os.path.exists(test_plan_path):
             logging.error(f"ERROR: Test plan file '{test_plan_path}' not found")
             return False
 
-        if not test_plan_path.endswith(('.json', '.docx')):
+        if not args.human_feedback and not test_plan_path.endswith(('.json', '.docx')):
             logging.error("ERROR: Test plan must be a JSON or DOCX file")
             return False
 
@@ -699,8 +774,7 @@ def run_test_automation(args, test_plan_path: str,
             review_agent_prompt=review_agent_prompt,
             test_coordinator_prompt=test_coordinator_prompt
         )
-
-        success = orchestrator.orchestrate_test_generation(test_plan_path)
+        success = orchestrator.human_in_loop() if (args.human_feedback and test_plan_path is None) else orchestrator.orchestrate_test_generation(test_plan_path)
 
         if success:
             if args.verbose:

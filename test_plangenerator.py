@@ -24,6 +24,74 @@ logging = logging.getLogger("VGA")
 # Load environment variables
 load_dotenv()
 
+def generate_test_plan_human_feedback(args, api_key: Optional[str] = None) -> tuple[bool, Dict[str, Any], str]:
+    
+    client = AzureOpenAI(
+        azure_endpoint = AZURE_OPENAI_INFERENCE_URL,
+        api_key=AZURE_OPENAI_API_KEY,
+        api_version=AZURE_OPENAI_INFERENCE_API_VERSION
+    )
+
+    base_prompt = TEST_PLAN_SYSTEM_PROMPT
+    initial_input = input("Enter the initial prompt for test plan generation\n>")
+    base_prompt += f"\n\nConsider the feature information while generating the test plan:\n {initial_input}"
+    logging.info(f"Generating test plan for prompt: {initial_input}")
+
+    conversation = [
+        {
+            "role": "system",
+            "content": (
+                "You are a testing expert that creates reliable JSON-formatted test plans.\n"
+                "Always output valid JSON only. No code fences. No explanations."
+            ),
+        },
+        {"role": "user", "content": base_prompt},
+    ]
+
+
+    try:
+        response=''
+        while True:
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=conversation,
+                response_format={"type": "json_object"},
+                temperature=0.3,        # Lower temperature for more consistent formatting
+                max_completion_tokens=5000
+            )
+            content = response.choices[0].message.content
+            print("Preview of JSON output:")
+            for i, line in enumerate(content.splitlines()):
+                if i > 50:
+                    print("... (truncated preview)")
+                    break
+                print(line)
+            feedback = input("\nGive feedback or type 'y' to accept: ").strip()
+            if feedback.lower() == "y":
+                print("✅ Response accepted.")
+                break
+            else:
+                # Append feedback as new user message so the model refines
+                conversation.append({"role": "assistant", "content": content})
+                conversation.append({"role": "user", "content": feedback})
+                print("↻ Regenerating with your feedback...\n")
+        # Get the raw text response
+        response_text = response.choices[0].message.content
+        try:
+            test_plan = json.loads(response_text)
+        except json.JSONDecodeError:
+            logging.error(f"Error generating test plan in json format: {str(e)}")
+            return False, {}, ""
+
+        if args.verbose:
+            logging.info("Successfully generated test plan")
+
+        return True, test_plan, response_text
+
+    except Exception as e:
+        logging.error(f"Error during API call or JSON parsing: {str(e)}")
+        return False, {}, ""
+
 def generate_test_plan(args, api_key: Optional[str] = None, feature_info: Optional[Dict] = None) -> tuple[bool, Dict[str, Any], str]:
     """
     Generate a test plan for a specified feature in JSON format.
@@ -54,7 +122,6 @@ def generate_test_plan(args, api_key: Optional[str] = None, feature_info: Option
             feature_info_str = json.dumps(feature_info, indent=2)
             base_prompt += f"\n\nConsider the feature information while generating the test plan:\n {feature_info_str}"
             logging.info(f"Generating test plan for feature: {feature_info['name']}")
-
         try:
             response = client.chat.completions.create(
                 model="gpt-4o",
@@ -216,10 +283,7 @@ def generate_test_plan_files(args, output_file: str, json_file: str, feature_inf
                 return False
 
         # Generate test plan
-        success, test_plan, raw_response = generate_test_plan(
-            args=args,
-            feature_info=feature_info,
-        )
+        success, test_plan, raw_response = generate_test_plan(args=args, feature_info=feature_info) if not args.human_feedback else generate_test_plan_human_feedback(args=args)
 
         if not success:
             logging.error("Failed to generate test plan")

@@ -12,4 +12,5 @@ SAVE_AND_BUILD_AGENT_SYSTEM_PROMPT=\
     6. If there is any build error then the summarizer agent would have already summarized the error. You should command the TestGenerationAgent to generate new code addressing the error, and ask review agent to review it.
     7. Important: If there is any system related error, terminate the execution flow with message ‘Encountered issues in build/run, terminating. No issue with code’.
     8. Terminate if the build succeeds(Any message like "build succeed" is found) even if there is error in execution part but if there is problem with build ask TESTGENERATION Agent to generate code after addressing the issue.
+**Important**: You must ask the user to explicitly give feedback using the HumanFeedbackAgent  if the build fails. If it succeds don't ask for feedback.
 """

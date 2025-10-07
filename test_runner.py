@@ -143,23 +143,30 @@ class TestWorkflowRunner:
 
     def generate_test_plan(self) -> Tuple[bool, str]:
         """Generate test plan document."""
+        if not self.feature_input_file and self.args.human_feedback and not self.args.with_test_plan:
+            logging.info("Interactive prompt with human feedback for code generation")
+            return True, None
         if self.test_plan_file and os.path.exists(self.test_plan_file):
             logging.info(f"Using existing test plan: {self.test_plan_file}")
             return True, self.test_plan_file
 
         try:
-            logging.info("Loading feature information...")
-            feature_info = self.load_feature_info()
+            feature_info={}
+            if not self.args.human_feedback:
+                logging.info("Loading feature information...")
+                feature_info = self.load_feature_info()
 
-            if not feature_info:
-                logging.error("No valid feature information found")
-                return False, ""
+                if not feature_info:
+                    logging.error("No valid feature information found")
+                    return False, ""
 
-            # Extract name from feature_info and create filename
-            feature_name = feature_info['name']
-            # Clean the name for use as filename (remove spaces, special chars)
-            feature_name = "".join(c for c in feature_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
-            feature_name = feature_name.replace(' ', '_').lower()
+                # Extract name from feature_info and create filename
+                feature_name = feature_info['name']
+                # Clean the name for use as filename (remove spaces, special chars)
+                feature_name = "".join(c for c in feature_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
+                feature_name = feature_name.replace(' ', '_').lower()
+            else:
+                feature_name='human_feedback_feature'
             self.feature_name = feature_name  # Store for use in other methods
 
             test_plan_file = self.output_dir / f"{self.feature_name}_test_plan.docx"
@@ -169,6 +176,7 @@ class TestWorkflowRunner:
             additional_docs_content = self.load_additional_docs_content()
 
             # Combine feature info with additional documentation
+            enhanced_feature_info = feature_info.copy() if feature_info else {}
             enhanced_feature_info = feature_info.copy()
             if additional_docs_content:
                 enhanced_feature_info['additional_documentation'] = additional_docs_content
@@ -375,7 +383,7 @@ class TestWorkflowRunner:
                         logging.info(f"Found existing test plan: {test_plan_file}")
                         break
 
-                if not test_plan_file:
+                if not test_plan_file and not self.args.human_feedback:
                     logging.error("No test plan file found and test plan generation is disabled.")
                     logging.error("Either provide --test-plan or enable --generate-plan")
                     return False
@@ -475,6 +483,8 @@ def main() -> None:
     parser.add_argument("--execute_dir", help="execute dir path: directory path for execution")
     parser.add_argument("--execute_args", nargs=argparse.REMAINDER, default=[], help="Arguments to be added for execution. ex: ./filename --device gaudi2")
     parser.add_argument('--execute_python',action='store_true',help='Execute generated tests (default: False)')
+    parser.add_argument('--human_feedback',action='store_true',help='give human feedback after code has been generated and the review is done.')
+    parser.add_argument('--with_test_plan',action='store_true',help='true if in human feedback want to generate test plan')
     # Step control arguments
     step_group = parser.add_mutually_exclusive_group()
     step_group.add_argument('--generate_plan_only', action='store_true',
@@ -500,6 +510,7 @@ def main() -> None:
             parser.error("--execute_cpp requires building using --build and also requires execute directrory in --execute_dir")
     try:
         # Dynamically import the module based on the prompt
+        if args.prompt_path.endswith('/'): args.prompt_path=args.prompt_path[:-1]
         module_path = args.prompt_path.replace("/", ".")
         code_agent_prompt = importlib.import_module(f'{module_path}.code_agent_system_prompt')
         review_agent_prompt = importlib.import_module(f'{module_path}.review_agent_system_prompt')
@@ -548,8 +559,14 @@ def main() -> None:
         review_agent_prompt=review_agent_prompt.REVIEW_AGENT_SYSTEM_PROMPT,
         test_coordinator_prompt=test_coordinator_prompt.TEST_COORDINATOR_AGENT_SYSTEM_PROMPT
     )
-
-    success = runner.run()
+    if args.human_feedback:
+        while True:
+            success = runner.run()
+            run_again=input("Do you want to generate tests again? y or n: ")
+            if run_again=='n' or run_again == 'no':
+                break
+    else:
+        success = runner.run()
     sys.exit(0 if success else 1)
 
 if __name__ == '__main__':
