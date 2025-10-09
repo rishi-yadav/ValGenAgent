@@ -175,7 +175,12 @@ class CustomUserProxyAgent(autogen.UserProxyAgent):
         custom_message = "[Human Feedback Requested] Please provide your feedback. Flow for agent is [Code-generation -> Review -> Execution/saving]. Human feedback agent can ask how to proceed: > "
         return input(custom_message)
 
-
+class InitialUserProxyAgent(autogen.UserProxyAgent):
+    def get_human_input(self, prompt: str = "Your input: ") -> str:
+        # Customize message shown to user
+        custom_message = "Please provide your Prompt here to start the code generation process (type 'exit' to quit). Flow for agent is {initial_prompt -> context_retrieval -> [Code-generation -> Review -> Execution/saving]}:  "
+        return input(custom_message)
+    
 class MultiAgentTestOrchestrator:
     def __init__(self, args, output_dir: str,
                  max_retries: int = 2,
@@ -351,10 +356,8 @@ class MultiAgentTestOrchestrator:
                         logging.info('Skipping retrieving context from index_db')
                         return ''
 
-                context = self.kb.retrive_document_chunks(context_input)
-                if re.search(r'error', str(context), re.IGNORECASE):
-                    logging.warning(f"[Orchestrator]-  Failed to retrieve doc chunks for , proceeding without context")
-                    context = ""
+                context = self.kb.retrive_document_chunks_graph(context_input) if self.args.index_db_type == 'property_graph' else self.kb.retrive_document_chunks(context_input)
+                context=" ".join([i.node.text for i in context])
             except Exception as e:
                 logging.warning(f"[Orchestrator]- retrieving doc chunks: {e}, proceeding without context")
                 context = ""
@@ -368,7 +371,7 @@ class MultiAgentTestOrchestrator:
         logging.info("[Orchestrator] - Starting GroupChat with human-in-the-loop")
 
         try:
-            initial_proxy_agent = autogen.UserProxyAgent(
+            initial_proxy_agent = InitialUserProxyAgent(
                 name="User Proxy Agent",
                 system_message="You are required to take initial message from user.",
                 llm_config=False,
@@ -723,7 +726,8 @@ class MultiAgentTestOrchestrator:
         """
         if self.kb:
             try:
-                self.kb.build_index(input_dirs, urls)
+                if self.args.index_db_type == 'property_graph': self.kb.build_index_graph(input_dirs, urls)
+                else: self.kb.build_index(input_dirs, urls)
                 return True
             except Exception as e:
                 logging.warning(f"Failed to build knowledge base: {e}")

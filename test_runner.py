@@ -485,6 +485,7 @@ def main() -> None:
     parser.add_argument('--execute_python',action='store_true',help='Execute generated tests (default: False)')
     parser.add_argument('--human_feedback',action='store_true',help='give human feedback after code has been generated and the review is done.')
     parser.add_argument('--with_test_plan',action='store_true',help='true if in human feedback want to generate test plan')
+    parser.add_argument('--index_db_type',type=str,default='property_graph',help='select either "vector_db" or "property_graph" for the corresponding index db creation.')
     # Step control arguments
     step_group = parser.add_mutually_exclusive_group()
     step_group.add_argument('--generate_plan_only', action='store_true',

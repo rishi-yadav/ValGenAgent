@@ -1,9 +1,5 @@
 import os
-import hashlib
-import pickle
-import time
 import re
-from pathlib import Path
 
 from llama_index.core import (
     VectorStoreIndex,
@@ -12,22 +8,26 @@ from llama_index.core import (
     load_index_from_storage,
     Document
 )
-from llama_index.core.node_parser import SimpleNodeParser
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.readers.web import BeautifulSoupWebReader
 from llama_index.llms.openai_like import OpenAILike
 from llama_index.core.node_parser import CodeSplitter, HierarchicalNodeParser
-from llama_index.packs.code_hierarchy import CodeHierarchyNodeParser
 import logging
-
-# from llama_index.core import Settings
+from openai import OpenAI as OpenAIClient
+from llama_index.embeddings.openai import OpenAIEmbedding
+from llama_index.llms.openai import OpenAI
+from llama_index.core import Settings
+from llama_index.core import SimpleDirectoryReader, StorageContext, load_index_from_storage
+from llama_index.core import PropertyGraphIndex
 
 from llama_index.embeddings.azure_inference import AzureAIEmbeddingsModel
 from llama_index.llms.azure_openai import AzureOpenAI
-
-
+from llama_index.embeddings.azure_openai import AzureOpenAIEmbedding
+from llama_index.packs.code_hierarchy import CodeHierarchyNodeParser
 
 logging = logging.getLogger("VGA") 
+
+    
 
 class KnowledgeBase:
     """Knowledge base using LlamaIndex for document retrieval and querying"""
@@ -65,11 +65,12 @@ class KnowledgeBase:
             api_version=aoai_inf_endpoint_version,
         )
 
-        self.embed_model = AzureAIEmbeddingsModel(
-            endpoint=aoai_embd_endpoint,
-            credential=aoai_api_key,
-            model_name=embedding_model,
+        self.embed_model = AzureOpenAIEmbedding(
+            engine=embedding_model,
+            azure_endpoint=aoai_inf_endpoint,
             api_version=aoai_embd_endpoint_version,
+            model=embedding_model,
+            api_key=aoai_api_key
         )
 
 
@@ -78,6 +79,9 @@ class KnowledgeBase:
         self.index = None
         self.query_engine = None
         self.retriever = None # Gets the most relevant document chunks without LLM processing
+
+
+
 
     def load_documents(self, code_dirs: str, urls:list[str])->list[Document]:
         """ load documents from code directories and URLs """
@@ -116,7 +120,7 @@ class KnowledgeBase:
             import traceback
             traceback.print_exc()
             raise
-
+    
     def parse_documents_by_type(self, docs: list[Document]):
         # Documents objects are converted into nodes (or a small meaningful chunk) based on their type.
         # Nodes are what's actually stored, embedded, and retrieved.
@@ -127,6 +131,13 @@ class KnowledgeBase:
         nodes = []
         for doc in docs:
             if doc.metadata.get("file_name", "").endswith(".py"):
+                cleaned_text = re.sub(
+                    r"(?s)^\s*(?:['\"]{3}.*?['\"]{3}\s*)+",  # matches '''...''' or """..."""
+                    "",
+                    doc.text,
+                    count=1
+                )
+                doc.set_content(cleaned_text)
                 parser = CodeHierarchyNodeParser(
                     language="python",
                     code_splitter=CodeSplitter(language="python", chunk_lines=1000, max_chars=2000)
@@ -167,6 +178,46 @@ class KnowledgeBase:
         logging.info(f"Parsed {len(nodes)} nodes from {len(docs)} documents")
         return nodes
 
+    def parse_documents_by_type_graph(self, docs: list[Document]):
+        # Documents objects are converted into nodes (or a small meaningful chunk) based on their type.
+        # Nodes are what's actually stored, embedded, and retrieved.
+        # Supported languages: https://github.com/Goldziher/tree-sitter-language-pack?tab=readme-ov-file#available-languages
+
+        doc_parser = HierarchicalNodeParser.from_defaults(chunk_sizes=[1024, 512])  # multiple granularities
+
+        nodes = []
+        for doc in docs:
+            if doc.metadata.get("file_name", "").endswith(".py"):
+                cleaned_text = re.sub(
+                    r"(?s)^\s*(?:['\"]{3}.*?['\"]{3}\s*)+",  # matches '''...''' or """..."""
+                    "",
+                    doc.text,
+                    count=1
+                )
+                doc.set_content(cleaned_text)
+                parser = CodeSplitter(language="python", chunk_lines=1000, max_chars=2000)
+            elif doc.metadata.get("file_name", "").endswith(".cpp") or doc.metadata.get("file_name","").endswith('.hpp'):
+                cleaned_text = re.sub(r"(?s)^\s*/\*+.*?\*/\s*", "", doc.text, count=1)
+                doc.set_content(cleaned_text)
+                parser = CodeSplitter(language="cpp", chunk_lines=30, max_chars=2000)
+            elif doc.metadata.get("file_name", "").endswith(".c"):
+                cleaned_text = re.sub(r"(?s)^\s*/\*+.*?\*/\s*", "", doc.text, count=1)
+                doc.set_content(cleaned_text)
+                parser =CodeSplitter(language="c", chunk_lines=30, max_chars=2000)
+            elif doc.metadata.get("file_name", "").endswith(".asm"):
+                parser =CodeSplitter(language="asm", chunk_lines=20, max_chars=2000)
+            else:
+                # Fallback to hierarchical parser for other types
+                # This will handle text, markdown, html, etc.
+                # It will also handle code files that are not specifically parsed above
+                # by splitting them into smaller nodes based on content length.
+                parser = doc_parser
+
+            nodes += parser.get_nodes_from_documents([doc])
+
+        logging.info(f"Parsed {len(nodes)} nodes from {len(docs)} documents")
+        return nodes
+
     def create_vector_index_from_nodes(self, nodes, persist_dir=None):
         try:
             # Check if index already exists
@@ -188,7 +239,6 @@ class KnowledgeBase:
                     self.index = VectorStoreIndex(
                         nodes,
                         embed_model=self.embed_model,
-                        llm=self.llm,
                         show_progress=True
                     )
                     logging.info(f"Saving freshly created vector index to {persist_dir}")
@@ -200,7 +250,6 @@ class KnowledgeBase:
             self.index = VectorStoreIndex(
                 nodes,
                 embed_model=self.embed_model,
-                llm=self.llm,
                 show_progress=True
             )
             logging.info(f"Saving vector index to {persist_dir}")
@@ -224,7 +273,7 @@ class KnowledgeBase:
             traceback.print_exc()
             return f"Query failed: {str(e)}"
 
-    def retrive_document_chunks(self, query_str, top_k=5):
+    def retrive_document_chunks(self, query_str, top_k=15):
         """Retrieve documents based on a query"""
         if not self.query_engine:
             raise ValueError("Index not built. Build vector index first.")
@@ -289,7 +338,99 @@ class KnowledgeBase:
 
         # Create vector index from nodes
         self.create_vector_index_from_nodes(nodes, persist_dir=self.knowledge_index_dir)
-
+        
         # Create query engine
         logging.info("Creating query engine...")
         self.query_engine = self.index.as_query_engine(llm=self.llm)
+
+    def create_index_from_nodes_graph(self, nodes, persist_dir=None):
+        try:
+            if os.path.exists(persist_dir):
+                try:
+                    logging.info("Loading existing KG index...")
+                    storage_context = StorageContext.from_defaults(persist_dir=persist_dir)
+                    self.index = load_index_from_storage(
+                        storage_context,
+                        embed_model=self.embed_model,
+                        llm=self.llm,
+                    )
+                    return
+                except Exception as e:
+                    logging.warning(f"Failed to load existing KG index: {e}")
+                    logging.info("Rebuilding KG index...")
+                    import shutil
+                    shutil.rmtree(persist_dir, ignore_errors=True)
+
+            logging.debug("Building KG index...")
+            self.index = PropertyGraphIndex(
+                nodes,
+                embed_model=self.embed_model,
+                max_triplets_per_chunk=10,
+                include_embeddings=True,
+                node_relationships_transformers=[],
+                llm=self.llm,
+            )
+            logging.info(f"Saving KG index to {persist_dir}")
+            self.index.storage_context.persist(persist_dir=persist_dir)
+        except Exception as e:
+            logging.error(f"Failed to build/load KG index: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
+
+    def build_index_graph(self, input_dirs=None, public_urls_file=None):
+        """Build the KG index from code directories and URLs"""
+        try:
+            if os.path.exists(self.knowledge_index_dir):
+                logging.debug("Loading existing KG index...")
+                storage_context = StorageContext.from_defaults(persist_dir=self.knowledge_index_dir)
+                self.index = load_index_from_storage(
+                    storage_context,
+                    embed_model=self.embed_model,
+                    llm=self.llm,
+                )
+                self.query_engine = self.index.as_query_engine(llm=self.llm)
+                logging.info("Successfully loaded existing KG index")
+                return
+        except Exception as e:
+            logging.error(f"Failed to load existing KG index: {e}")
+            import shutil
+            shutil.rmtree(self.knowledge_index_dir)
+
+        if not input_dirs and not public_urls_file:
+            raise ValueError("No input directories or URLs provided to build KG index.")
+
+        # check URLs
+        urls = []
+        if public_urls_file:
+            if not os.path.exists(public_urls_file):
+                raise FileNotFoundError(f"Public URLs file not found: {public_urls_file}")
+            urls = open(public_urls_file, "r", encoding="utf-8").read()
+            urls = [u.strip() for u in urls.split("\n") if u.strip() and not u.startswith("#")]
+
+        # Load documents
+        docs = self.load_documents(input_dirs, urls)
+        if not docs:
+            logging.warning("No documents loaded. Cannot build KG index.")
+            return
+
+        # Parse docs
+        nodes = self.parse_documents_by_type_graph(docs=docs)
+
+        # Create KG index
+        self.create_index_from_nodes_graph(nodes, persist_dir=self.knowledge_index_dir)
+
+        logging.info("Creating KG retriever + query engine...")
+        self.query_engine = self.index.as_query_engine(llm=self.llm)
+
+
+    def retrive_document_chunks_graph(self, query_str, top_k=15):
+        """Retrieve chunks via KG retriever"""
+        try:
+            results = self.index.as_retriever(similarity_top_k=top_k).retrieve(query_str)
+            return results  # list of NodeWithScore
+        except Exception as e:
+            logging.error(f"KG retrieval failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return f"Retrieval failed: {str(e)}"
