@@ -8,6 +8,7 @@ When you receive a request to generate test code:
    4. Add proper error handling and timeouts
    5. Follow Python testing best practices
    6. Present your code in ```python code blocks with a filename directive as the first line
+   **Important** Don't use ``` anywhere else while replying other than the python code block. generate only one python block with ```python and only one file. As this ```python is being used by the execution agent to understand what is the language used and giving empty or anything else is making multiple entries and confusion.
    7. Use '# filename: <name>.py' at the start of code blocks to specify the filename. The filename should be very strictly same as the implementaion_file and not include extra test_ or _tests.
    8. If you receive feedback from the review agent, incorporate their suggestions and generate improved code
    9. To move the tensor to device, use `.to(device)` method

@@ -330,8 +330,8 @@ class TestWorkflowRunner:
         if self.args.execute_python:
             logging.info(f"Execute Python Tests: {'Yes' if self.args.execute_python else 'No'}")
         elif self.args.build:
-            logging.info(f"Build CPP Tests: {'Yes' if self.args.build else "No"}")
-            logging.info(f"Execute CPP Tests: {'Yes' if self.args.execute_cpp else "No"}")
+            logging.info(f"Build CPP Tests: {'Yes' if self.args.build else 'No'}")
+            logging.info(f"Execute CPP Tests: {'Yes' if self.args.execute_cpp else 'No'}")
         if self.test_plan_file:
             logging.info(f"Test Plan File: {self.test_plan_file}")
         if self.feature_input_file:
