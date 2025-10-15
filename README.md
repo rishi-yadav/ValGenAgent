@@ -11,12 +11,11 @@ the test cases and, executing tests cases on target device. The pipeline uses ex
 public URLs to create a vector index which provides context to LLM (GPT-4o) for better code genetion.
 It provides flexibility to user to selectively use all three or single execution flow.
 
-Note: The pipeline uses iGPT tokens (provided by Intel IT) for embedding and inference hence it is completely safe to use even with your proprietary code.
+Note: The pipeline uses Azure deployed models for embedding and inference hence it is completely safe to use even with your proprietary code.
 
 Please check the following resources for iGPT access:
-- IGpt API Access: https://wiki.ith.intel.com/display/GenAI/Requesting+Access
-- Internal API Access: https://api-portal-internal.intel.com/my-apps
-- Getting started: https://wiki.ith.intel.com/display/GenAI/Using+the+Inference+API
+- Migration docs from igpt to azure: https://ryan.intel.com/Learning/AI/#Transition
+- Azure Docs: https://learn.microsoft.com/en-us/azure/ai-foundry/what-is-azure-ai-foundry
 
 LlamaIndex and autogen are used for pipeline creation.
 
@@ -32,6 +31,7 @@ LlamaIndex and autogen are used for pipeline creation.
 -  Supports source code (c/cpp/python/assembly) + Documents (docx/pptx/pdf etc.) + Pulic URLs as inputs for richer context
 -  Langugae aware and Hierarchical parser
 -  Context-aware retrieval Pipeline
+-  Context can be given as RAG or Files in case of files we can use the flag --add_context_dir
 
 ---
 
@@ -87,10 +87,9 @@ All outputs (plans, scripts, logs) are saved under user provided directory name 
 test_results/
 ├── test_plan.docx
 ├── test_plan.json
-├── generated tests/
-│   ├── test_results.xml
-│   └── test_operations.py
-│   └── test_chat_log.txt
+│── test_results.xml
+│── test_operations.py
+│── test_chat_log.txt
 └── function_test_results.xlsx
 ```
 
@@ -103,12 +102,12 @@ Following are the steps to use it:
 ###  Initial Setup
 
 1. **Prepare Target Hardware/Simulator env**
-   - If you are using Gaudi, ensure you have 8-card Gaudi container up and running.
-   - For any other system, connect to the targer machine.
+   - If you are using Gaudi, ensure you have Gaudi container up and running.
+   - For any other system, connect to the target machine.
 
 2. **Clone the Repository**
    ```bash
-   git clone https://github.com/mansi05ag/ValGenAgent.git
+   git clone https://github.com/pramodkumar-habanalabs/ValGenAgent.git
    cd ValGenAgent
    ```
 
@@ -116,12 +115,14 @@ Following are the steps to use it:
    ```bash
    pip install -r requirements.txt
    ```
-
+> **Note:** If required make a python environment.
 ---
 
 ###  Prepare input directory
 
 Put your code, docs, and public urls inside the `input_dirs`. Alternatively, create a softlink accordingly.
+
+If using --add_context_dir, keep the files in a directory that can be given to the agent as a context.
 
 ---
 
@@ -136,12 +137,30 @@ This is the prompt/instruction file used to generate test cases.
 
 Please refer feature_description/collective_feature.json
 ```
+
+If using test_plan you can give in the following format.
+
+```json
+{
+  "test_plan": "cutlass_flash_attention_decode",
+  "tests": {
+    "test_category": "cutlass_flash_attention_decode",
+    "implementation_file": "xe_flash_decode_generated.cpp",
+    "test_cases": [
+      {
+        "test_id": "REQ_001",
+        "description": "Write 5 new tests cases for flash attention decode that is for different LLM configurations eg: gpt,llama etc. you need to overload existing TestFlashDecodeAll function for better quality tests."
+      }
+    ]
+  }
+}
+```
 ---
 
 ###  Run the Agent
 
 ```bash
-python test_runner.py --feature_input <path_to_input_file> --output_dir test_results
+python test_runner.py --feature_input_file <path_to_input_file> --output_dir test_results prompt_path path/to/system_prompts --execute_python
 ```
 
 ---
@@ -150,24 +169,113 @@ python test_runner.py --feature_input <path_to_input_file> --output_dir test_res
 
 ```bash
 # Just generate test cases - don't run them
-python test_runner.py --feature_input input_file/collective_feature.json --output_dir test_results --execute_tests=false
+python test_runner.py --feature_input_file input_file/collective_feature.json --prompt_path path/to/system_prompts --output_dir test_results
 
 # Generate just the test plan based on the input file
-python test_runner.py --feature_input input_file/collective_feature.json --generate_plan-only --output-dir test_results
+python test_runner.py --feature_input_file input_file/collective_feature.json --generate_plan-only --output-dir test_results --prompt_path path/to/system_prompts
 
 # just generate tests based on user provided test plan
-python test_runner.py --test_plan path/to/plan.json --output_dir path/to/output_dir --execute-tests=false
+python test_runner.py --test_plan path/to/plan.json --output_dir path/to/output_dir --prompt_path prompts/collective
+
+# Generate and execute python tests
+python test_runner.py --feature_input_file input_file/collective_feature.json --output-dir test_results --prompt_path prompts/collective --execute_python
+
+# Generate and execute python tests based on context_dir
+python test_runner.py --feature_input_file input_file/collective_feature.json --output-dir test_results --prompt_path prompts/collective --execute_python --add_context_dir path/to/context_dir
+
+# Build the generated cpp from test plan-> cutalss usecase
+python test_runner.py --test_plan template_input_file/cutlass_flash_attention_decode.json --output_dir cutlass-sycl/test/unit/flash_attention/flash_attention_decode --prompt_path prompts/cutlass/flash_attention --build --build_dir cutlass-sycl/build --build_cmd 'ninja cutlass_test_unit_flash_attention_decode_ai' --add_context_dir input_dirs/code/flash_attention/temp
+
+# Just save the generated cpp from test plan using RAG-> cutalss usecase
+python test_runner.py --test_plan template_input_file/cutlass_flash_attention_decode.json --output_dir cutlass-sycl/test/unit/flash_attention/flash_attention_decode --prompt_path prompts/cutlass/flash_attention
+
+# Just save the generated cpp from test plan using context_dir -> cutlass usecase
+python test_runner.py --test_plan template_input_file/cutlass_flash_attention_decode.json --output_dir cutlass-sycl/test/unit/flash_attention/flash_attention_decode --prompt_path prompts/cutlass/flash_attention --add_context_dir input_dirs/code/flash_attention/temp
+
+#build and execute the generated cpp from test plan-> cutalss usecase
+python test_runner.py --test_plan template_input_file/cutlass_flash_attention_decode.json --output_dir cutlass-sycl/test/unit/flash_attention/flash_attention_decode --prompt_path prompts/cutlass/flash_attention --build --build_dir cutlass-sycl/build --build_cmd 'ninja cutlass_test_unit_flash_attention_decode_ai' --add_context_dir input_dirs/code/flash_attention/temp --execute --execute_dir cutlass-sycl/build/test/unit/flash_attention/flash_attention_decode
 ```
 
 ---
+## Property Graph RAG and Vector DB RAG
 
+The framework provides flexible options for building and querying retrieval-augmented generation (RAG) databases — either through a **Vector Database (Vector DB)** or a **Property Graph Database (Property Graph RAG)**.  
+Both serve different purposes and can be chosen based on the nature of your data, the relationships involved, and the retrieval requirements.
+
+Using the `--index_db` flag, you can select the type of index database to use.  
+Additionally, the `--remove_index_db` flag can be applied to clear or rebuild an existing index before creating a new one.
+
+---
+
+### Overview
+
+#### Vector DB RAG
+The **Vector Database** option is best suited for unstructured or semi-structured data such as documents, text embeddings, or feature vectors.  
+It uses similarity-based search (e.g., cosine similarity, dot product) to retrieve contextually similar entries during RAG operations.
+
+**Use Case Examples:**
+- Semantic retrieval for textual or multimodal data.  
+- Embedding-based context lookup for prompt augmentation.  
+- Fast nearest-neighbor search for large-scale datasets.
+
+
+#### Property Graph RAG
+The **Property Graph RAG** approach is ideal for structured, relational, or interconnected data.  
+It models information as nodes and edges with associated properties, allowing for context retrieval that respects graph relationships and dependencies.
+
+**Use Case Examples:**
+- Representing entities, relationships, and their attributes.  
+- Querying complex dependency graphs for reasoning tasks.  
+- Use cases where contextual meaning depends on linked relationships rather than text similarity.
+
+```bash
+# with vector_db. Here we add --remove_index_db in order to remove the existing index_db.
+python test_runner.py --feature_input_file input_file/collective_feature.json --prompt_path path/to/system_prompts --output_dir test_results index_db vector_db --remove_index_db
+# with property_graph
+python test_runner.py --feature_input_file input_file/collective_feature.json --prompt_path path/to/system_prompts --output_dir test_results index_db property_graph --remove_index_db
+```
+
+---
 ##  Use cases
 
 This application supports various types of execution plans. Depending on the requirement, you can either:
 - Only create the test cases
 - Only generate the test plan
+- Build the executables if applicable
 - Run the complete End-to-End workflow - test plan generation, test code generation, and execution
 
+# Human Feedback Flow
+
+The **Human Feedback Flow** enables a human-in-the-loop workflow where a user can actively guide and manage the agent’s actions during group chat interactions.  
+This approach allows dynamic collaboration — users can review, refine, and re-run stages to improve outcomes while preventing the system from automatically repeating the same mistakes.
+
+With this flow, you can generate, review, and regenerate tests in real time, ensuring higher quality and more controlled automation.
+
+---
+
+### Key Use Cases
+
+- Run tests on the initial prompt to evaluate early outputs.  
+- Create a test plan first, then execute the generated tests for structured evaluation.  
+- Iterate interactively by refining prompts or results based on human feedback.
+
+---
+```bash
+#No execution just save the file:
+python test_runner.py --output_dir cutlass-sycl/test/unit/flash_attention/flash_attention_decode --prompt_path prompts/cutlass/ --human_feedback
+
+#With execution in python
+python test_runner.py --feature_input_file input_file/collective_feature.json --output-dir test_results --prompt_path prompts/collective --execute_python
+
+#with test plan generated
+python test_runner.py --feature_input_file input_file/collective_feature.json --output-dir test_results --prompt_path prompts/collective --execute_python --with_test_plan
+
+#with execution in cpp
+python test_runner.py --output_dir /path/to/folder --prompt_path prompts/cutlass/cutlass_humanfeedback --add_context_dir /path/to/folder --build --build_dir /path/to/folder --build_cmd 'ninja MainloopIntelXeXMX16Group_generated_test' --execute_cpp --execute_dir /path/to/folder
+
+#with verbose enabled. Detailed logs are provided.
+python test_runner.py --output_dir cutlass-sycl/test/unit/flash_attention/flash_attention_decode --prompt_path prompts/cutlass/ --human_feedback --verbose
+```
 
 ## Web based
 
