@@ -172,16 +172,16 @@ python test_runner.py --feature_input_file <path_to_input_file> --output_dir tes
 python test_runner.py --feature_input_file input_file/collective_feature.json --prompt_path path/to/system_prompts --output_dir test_results
 
 # Generate just the test plan based on the input file
-python test_runner.py --feature_input_file input_file/collective_feature.json --generate_plan-only --output-dir test_results --prompt_path path/to/system_prompts
+python test_runner.py --feature_input_file input_file/collective_feature.json --generate_plan-only --output_dir test_results --prompt_path path/to/system_prompts
 
 # just generate tests based on user provided test plan
 python test_runner.py --test_plan path/to/plan.json --output_dir path/to/output_dir --prompt_path prompts/collective
 
 # Generate and execute python tests
-python test_runner.py --feature_input_file input_file/collective_feature.json --output-dir test_results --prompt_path prompts/collective --execute_python
+python test_runner.py --feature_input_file input_file/collective_feature.json --output_dir test_results --prompt_path prompts/collective --execute_python
 
 # Generate and execute python tests based on context_dir
-python test_runner.py --feature_input_file input_file/collective_feature.json --output-dir test_results --prompt_path prompts/collective --execute_python --add_context_dir path/to/context_dir
+python test_runner.py --feature_input_file input_file/collective_feature.json --output_dir test_results --prompt_path prompts/collective --execute_python --add_context_dir path/to/context_dir
 
 # Build the generated cpp from test plan-> cutalss usecase
 python test_runner.py --test_plan template_input_file/cutlass_flash_attention_decode.json --output_dir cutlass-sycl/test/unit/flash_attention/flash_attention_decode --prompt_path prompts/cutlass/flash_attention --build --build_dir cutlass-sycl/build --build_cmd 'ninja cutlass_test_unit_flash_attention_decode_ai' --add_context_dir input_dirs/code/flash_attention/temp
@@ -193,7 +193,70 @@ python test_runner.py --test_plan template_input_file/cutlass_flash_attention_de
 python test_runner.py --test_plan template_input_file/cutlass_flash_attention_decode.json --output_dir cutlass-sycl/test/unit/flash_attention/flash_attention_decode --prompt_path prompts/cutlass/flash_attention --add_context_dir input_dirs/code/flash_attention/temp
 
 #build and execute the generated cpp from test plan-> cutalss usecase
-python test_runner.py --test_plan template_input_file/cutlass_flash_attention_decode.json --output_dir cutlass-sycl/test/unit/flash_attention/flash_attention_decode --prompt_path prompts/cutlass/flash_attention --build --build_dir cutlass-sycl/build --build_cmd 'ninja cutlass_test_unit_flash_attention_decode_ai' --add_context_dir input_dirs/code/flash_attention/temp --execute --execute_dir cutlass-sycl/build/test/unit/flash_attention/flash_attention_decode
+python test_runner.py --test_plan template_input_file/cutlass_flash_attention_decode.json --output_dir cutlass-sycl/test/unit/flash_attention/flash_attention_decode --prompt_path prompts/cutlass/flash_attention --build --build_dir cutlass-sycl/build --build_cmd 'ninja cutlass_test_unit_flash_attention_decode_ai' --add_context_dir input_dirs/code/flash_attention/temp --execute_cpp --execute_dir cutlass-sycl/build/test/unit/flash_attention/flash_attention_decode
+```
+
+### working example
+#### Python flow -> for collectives.
+```bash
+# Just generate test cases - don't run them
+python test_runner.py --feature_input_file input_file/collective_feature.json --prompt_path path/to/system_prompts --output_dir test_results
+
+# Generate and execute python tests
+python test_runner.py --feature_input_file input_file/collective_feature.json --output_dir test_results --prompt_path prompts/collective --execute_python
+```
+
+#### CPP flow -> for cutlass
+follow these steps to do this
+
+```bash
+#clone sycl-tla
+git clone https://github.com/intel/sycl-tla.git
+#clone the ValGenAgent repo
+git clone https://github.com/pramodkumar-habanalabs/ValGenAgent.git
+#go in the ValGenAgent repo
+cd ValGenAgent
+#make a directory for context lets name it temp_cutlass
+mkdir input_dirs/code/context_flashattention_decode
+#put the files required in the temp cutlass folder
+cp /home/sdp/QA/sycl-tla/test/unit/flash_attention/flash_attention_decode/flash_decode_testbed_3x.hpp input_dirs/code/context_flashattention_decode
+cp /home/sdp/QA/sycl-tla/test/unit/flash_attention/flash_attention_decode/xe_flash_decode_bf16_fp32_fp32_h64_512_nonpaged.cpp input_dirs/code/context_flashattention_decode
+```
+Now set the variables for cutlass building and execution work flow
+```bash
+#set the variables for cutlass use case for build
+source /opt/intel/oneapi/setvars.sh
+
+export CC=icx
+export CXX=icpx
+export CUTLASS_SYCL_PROFILING_ENABLED=ON
+export ONEAPI_DEVICE_SELECTOR=level_zero:gpu
+export CMAKE_BUILD_TYPE=Release
+export IGC_VISAOptions="-perfmodel"
+export IGC_VectorAliasBBThreshold=100000000000
+export IGC_ExtraOCLOptions="-cl-intel-256-GRF-per-thread"
+
+# Persist environment variables to following steps **Important step because if its empty or shows error, setup is incomplete or variables not set properly
+sycl-ls
+```
+Now make changes in the cmake for having the build dependencies defined correctly
+```bash
+#For the case where the ninja build command is 'ninja cutlass_test_unit_flash_attention_decode_ai' we will do the add the following in the cmake
+
+cutlass_test_unit_add_executable(
+  cutlass_test_unit_flash_attention_decode_xe_ai
+  xe_flash_decode_generated.cpp
+)
+
+add_custom_target(
+  cutlass_test_unit_flash_attention_decode_ai
+  cutlass_test_unit_flash_attention_decode_xe_ai
+)
+```
+ 
+Now run the agent using the following command
+```bash
+python test_runner.py --test_plan template_input_file/cutlass_flash_attention_decode.json --output_dir ../sycl-tla/test/unit/flash_attention/flash_attention_decode/ --prompt_path prompts/cutlass/flash_attention --build --build_dir ../sycl-tla/build --build_cmd 'ninja cutlass_test_unit_flash_attention_decode_ai' --add_context_dir input_dirs/code/context_flashattention_decode --execute_cpp --execute_dir ../sycl-tla/build/test/unit/flash_attention/flash_attention_decode/
 ```
 
 ---
