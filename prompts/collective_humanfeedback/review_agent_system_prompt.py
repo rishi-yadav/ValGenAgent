@@ -19,6 +19,7 @@ REVIEW_AGENT_SYSTEM_PROMPT=\
         - Proper resource cleanup and timeout handling
         - Filename should be same as implementation_file and no extra test_ or _test or should be there. It must be very very strict.
         - Testing best practices and conventions
+        - **Important** Make sure the agent doesn't use ``` anywhere else while replying other than the python code block and generate only one python block and only one file.
 
     - If the test generation agent is generating the same code multiple times, thoroughly check the code and understand if it's actually correct or not. Do not get struck in a loop.
     **MANDATORY REQUIREMENT**: The test file MUST include a main execution block that actually runs the tests. Look for code like:
