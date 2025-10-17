@@ -200,10 +200,10 @@ python test_runner.py --test_plan template_input_file/cutlass_flash_attention_de
 #### Python flow -> for collectives.
 ```bash
 # Just generate test cases - don't run them
-python test_runner.py --feature_input_file input_file/collective_feature.json --prompt_path path/to/system_prompts --output_dir test_results
+python test_runner.py --feature_input_file template_input_file/collective_feature.json --prompt_path path/to/system_prompts --output_dir test_results
 
 # Generate and execute python tests
-python test_runner.py --feature_input_file input_file/collective_feature.json --output_dir test_results --prompt_path prompts/collective --execute_python
+python test_runner.py --feature_input_file template_input_file/collective_feature.json --output_dir test_results --prompt_path prompts/collective --execute_python
 ```
 
 #### CPP flow -> for cutlass
@@ -256,7 +256,7 @@ add_custom_target(
  
 Now run the agent using the following command
 ```bash
-python test_runner.py --test_plan template_input_file/cutlass_flash_attention_decode.json --output_dir ../sycl-tla/test/unit/flash_attention/flash_attention_decode/ --prompt_path prompts/cutlass/flash_attention --build --build_dir ../sycl-tla/build --build_cmd 'ninja cutlass_test_unit_flash_attention_decode_ai' --add_context_dir input_dirs/code/context_flashattention_decode --execute_cpp --execute_dir ../sycl-tla/build/test/unit/flash_attention/flash_attention_decode/
+python test_runner.py --test_plan template_input_file/cutlass_flash_attention_decode.json --output_dir /home/sdp/QA/sycl-tla/test/unit/flash_attention/flash_attention_decode/ --prompt_path prompts/cutlass/flash_attention --build --build_dir /home/sdp/QA/sycl-tla/build --build_cmd 'ninja cutlass_test_unit_flash_attention_decode_ai' --add_context_dir input_dirs/code/context_flashattention_decode --execute_cpp --execute_dir /home/sdp/QA/sycl-tla/build/test/unit/flash_attention/flash_attention_decode/
 ```
 
 ---
