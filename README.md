@@ -197,7 +197,7 @@ python test_runner.py --test_plan template_input_file/cutlass_flash_attention_de
 ```
 
 ### working example
-#### Python -> for collectives.
+#### Python flow -> for collectives.
 ```bash
 # Just generate test cases - don't run them
 python test_runner.py --feature_input_file input_file/collective_feature.json --prompt_path path/to/system_prompts --output_dir test_results
