@@ -17,7 +17,9 @@ llama-index-llms-openai-like>=0.1.2
 llama-index-packs-code-hierarchy>=0.6.0
 beautifulsoup4>=4.12.0
 tree_sitter_language_pack
-
+llama_index.embeddings.azure_inference
+llama_index.llms.azure_openai
+llama_index.embeddings.azure_openai
 
 # Additional document processing libraries for multi-format input support
 python-pptx>=0.6.21        # PowerPoint files
