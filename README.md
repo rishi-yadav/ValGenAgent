@@ -8,7 +8,7 @@ ValGenAgent is a **RAG-powered, AI agents based pipeline** for automated:
 
 It simplifies software validation workflows by generating test plans (from feature input files), generating
 the test cases and, executing tests cases on target device. The pipeline uses existing source code, documents,
-public URLs to create a vector index which provides context to LLM (GPT-4o) for better code genetion.
+public URLs to create a vector index which provides context to LLM (GPT-4o) for better code generation.
 It provides flexibility to user to selectively use all three or single execution flow.
 
 Note: The pipeline uses Azure deployed models for embedding and inference hence it is completely safe to use even with your proprietary code.
@@ -65,8 +65,8 @@ and public URLs (un-restricted access) as inputs for richer context while creati
 
 ValGenAgent uses [`SimpleDirectoryReader`](https://docs.llamaindex.ai/en/stable/module_guides/loading/simpledirectoryreader/) from LlamaIndex, and supports:
 
-- `.txt`, `.md`, `.py`, `.c`, `.cpp`, `.s`, `.json`, `.docx`, `.xlsx`, `.pptx`, `pdf`, etc.
-- Unsupported file will be treated as plane text
+- `.txt`, `.md`, `.py`, `.c`, `.cpp`, `.s`, `.json`, `.docx`, `.xlsx`, `.pptx`, `.pdf`, etc.
+- Unsupported file will be treated as plain text
 
 ---
 ## Where to keep inputs (codes/docs/public_urls etc.) ?
@@ -308,6 +308,10 @@ This application supports various types of execution plans. Depending on the req
 - Run the complete End-to-End workflow - test plan generation, test code generation, and execution
 
 # Human Feedback Flow
+
+## TestCase generation flow with humanfeedback
+The following diagram shows how the agents interact and how the workflow looks like. 
+![Alt text](./workflow_with_humanfeedback.png "Workflow with humanfeedback")
 
 The **Human Feedback Flow** enables a human-in-the-loop workflow where a user can actively guide and manage the agent’s actions during group chat interactions.  
 This approach allows dynamic collaboration — users can review, refine, and re-run stages to improve outcomes while preventing the system from automatically repeating the same mistakes.
